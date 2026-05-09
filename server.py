@@ -220,6 +220,7 @@ async def ack_command(cmd_id: int, auth=Header(None, alias="x-api-key")):
 # ════════════════════════════════════════════════════════════════════
 
 @app.get("/api/admin/test")
+@app.get("/api/admin/test")
 async def test_admin_connection(auth=Header(None, alias="x-api-key")):
     """Test Admin API connection - for Live Monitor"""
     if auth != ADMIN_API_KEY:

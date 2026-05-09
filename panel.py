@@ -10829,6 +10829,7 @@ class MonitorLiveTab(tk.Frame):
         self._running = True
         self._lock = threading.Lock()
         self.user_sessions = {}
+        self.selected_user = None  # Track selected user for remote view
         self._build_ui()
         self._start_monitor_thread()
     
@@ -10905,6 +10906,10 @@ class MonitorLiveTab(tk.Frame):
         item = self.tree.identify_row(event.y)
         if item:
             self.tree.selection_set(item)
+            # Track selected user for remote view
+            values = self.tree.item(item)['values']
+            if values:
+                self.selected_user = values[0]  # Username is first column
             try:
                 self.menu.tk_popup(event.x_root, event.y_root)
             except:
@@ -11044,10 +11049,18 @@ class MonitorLiveTab(tk.Frame):
             self._fetch_data()  # Refresh with new config
 
     def _remote_view(self):
-        messagebox.showinfo("Info", "Remote view coming soon")
+        """Open real remote control window with live screenshot + mouse/keyboard control"""
+        if not self.selected_user:
+            messagebox.showwarning("Warning", "Please select a user first")
+            return
+        
+        username = self.selected_user
+        window = RemoteControlWindow(self.winfo_toplevel(), username, self.api_url, self.api_key)
+        window.focus()
     
     def _mouse_control(self):
-        messagebox.showinfo("Info", "Mouse control coming soon")
+        """Alias for remote view"""
+        self._remote_view()
     
     def _view_logs(self):
         messagebox.showinfo("Logs", "Session logs coming soon")
