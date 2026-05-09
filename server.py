@@ -491,18 +491,27 @@ async def admin_send_control_event(
     """Admin ki-sift event (mouse/keyboard) l user"""
     try:
         event = await request.json()
+        print(f"[SERVER] CONTROL RECEIVED: {event.get('type')} for {username}")
+        
         # Add to queue
         if username not in CONTROL_EVENTS:
             CONTROL_EVENTS[username] = []
-        CONTROL_EVENTS[username].append({
+        
+        event_with_ts = {
             **event,
             "timestamp": int(time.time() * 1000)  # ms
-        })
+        }
+        CONTROL_EVENTS[username].append(event_with_ts)
+        
+        print(f"[SERVER] ROUTING TO CLIENT: {username} (queue size: {len(CONTROL_EVENTS[username])})")
+        
         # Limit queue size (avoid memory issues)
         if len(CONTROL_EVENTS[username]) > 100:
             CONTROL_EVENTS[username] = CONTROL_EVENTS[username][-50:]
+        
         return {"ok": True}
     except Exception as e:
+        print(f"[SERVER] ERROR: {e}")
         raise HTTPException(400, str(e))
 
 
@@ -513,6 +522,10 @@ async def user_poll_control_events(
 ):
     """User ki-poll events l-y-ydir"""
     events = CONTROL_EVENTS.get(username, [])
+    if events:
+        print(f"[SERVER] SENDING {len(events)} EVENTS TO {username}")
+        for evt in events:
+            print(f"[SERVER] EVENT: {evt.get('type')}")
     # Clear after fetch
     CONTROL_EVENTS[username] = []
     return {"events": events}
