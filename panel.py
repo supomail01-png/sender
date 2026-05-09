@@ -10993,9 +10993,9 @@ class MonitorLiveTab(tk.Frame):
         def task():
             try:
                 import requests
-                resp = requests.get(f"{self.api_url}/api/admin/users", headers={"x-api-key": self.api_key}, timeout=5)
+                resp = requests.get(f"{self.api_url}/api/admin/clients", headers={"x-api-key": self.api_key}, timeout=5)
                 if resp.status_code == 200:
-                    data = resp.json().get("users", [])
+                    data = resp.json().get("clients", [])
                     self.after(0, lambda: self._update_tree(data, "API"))
                 else:
                     self.status_lbl.config(text=f"● Error: {resp.status_code}", fg=C["red"])
@@ -11011,28 +11011,26 @@ class MonitorLiveTab(tk.Frame):
             
             now = time.time()
             for d in data:
-                user = d.get("user") or d.get("username", "Unknown")
-                status = "🟢 Online" if d.get("status") == "Online" else "🔴 Offline"
-                page = d.get("page", "Idle")
+                # Handle client response format from /api/admin/clients
+                username = d.get("username", "Unknown")
+                status = "🟢 Online" if d.get("status") == "online" else "🔴 Offline"
+                page = d.get("page", "-")
                 activity = d.get("activity", "-")
-                last_seen = d.get("last_seen", "Never")
+                last_seen = d.get("last_seen", 0)
+                session_duration = d.get("session_duration", 0)
                 
-                session_time = "0h 0m"
-                if user in self.user_sessions:
-                    elapsed = now - self.user_sessions[user]
-                    h = int(elapsed) // 3600
-                    m = (int(elapsed) % 3600) // 60
-                    session_time = f"{h}h {m}m"
-                else:
-                    self.user_sessions[user] = now
+                # Format session time
+                h = int(session_duration) // 3600
+                m = (int(session_duration) % 3600) // 60
+                session_time = f"{h}h {m}m" if session_duration > 0 else "0h 0m"
                 
-                self.tree.insert("", "end", values=(user, status, page, activity, str(last_seen)[:10], session_time))
+                self.tree.insert("", "end", values=(username, status, page, activity, str(last_seen)[:10], session_time))
             
-            self.user_count_lbl.config(text=f"Users: {len(data)}")
+            self.user_count_lbl.config(text=f"Clients: {len(data)}")
             fg = C["green"] if source == "API" else C["yellow"]
             self.status_lbl.config(text=f"● {source}", fg=fg)
-        except:
-            pass
+        except Exception as e:
+            print(f"Update tree error: {e}")
 
     def _open_api_config(self):
         """Open API Configuration dialog with 3 fields: Server URL, Admin Key, User Key"""
