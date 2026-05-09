@@ -10752,7 +10752,7 @@ class ApiConfigDialog(tk.Toplevel):
         def test():
             try:
                 import requests
-                r = requests.get(f"{url}/admin/users", headers={"x-api-key": admin_key}, timeout=5)
+                r = requests.get(f"{url}/api/admin/test", headers={"x-api-key": admin_key}, timeout=5)
                 if r.status_code == 200:
                     self.after(0, lambda: self.status_lbl.config(text="✅ Admin API Connected", fg=C["green"]))
                 else:
