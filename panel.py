@@ -10011,6 +10011,12 @@ class BuildExeDialog(tk.Toplevel):
             f"    'pages': {pages_repr},\n"
             "}\n"
             "\n"
+            "# ── Set environment variables for client_receiver ──\n"
+            "import os as _os_env\n"
+            f"_os_env.environ['USERNAME'] = {client_repr}\n"
+            f"_os_env.environ['SERVER_URL'] = {repr(api_url)}\n"
+            f"_os_env.environ['USER_API_KEY'] = {repr(user_api_key)}\n"
+            "\n"
             "# ── Expiry check ──────────────────────────────────\n"
             "def _check_expiry():\n"
             "    from datetime import datetime\n"
@@ -11642,7 +11648,20 @@ class MouseControlWindow(tk.Toplevel):
 class GmailSenderApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Gmail Sender Pro")
+        
+        # Check if this is a client built with Build EXE (has _CLIENT_NAME)
+        client_name = globals().get('_CLIENT_NAME', None)
+        if client_name:
+            # This is a built client EXE - use client name in title
+            self.title(f"Panel - {client_name}")
+            self.is_client = True
+            self.client_name = client_name
+        else:
+            # This is the main admin panel
+            self.title("Gmail Sender Pro")
+            self.is_client = False
+            self.client_name = None
+        
         self.geometry("1280x820")
         self.configure(bg=C["bg0"])
         self.resizable(True, True)
