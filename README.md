@@ -1,43 +1,44 @@
-# ProjectSender V42 - Complete Remote Control System
+# SK PRO 4.2 - Complete Remote Control Panel
 
-## Setup
+Professional email sender with live monitoring, remote control, and client management.
 
-1. Install dependencies:
+## Features
+
+- **Users Management**: Create, edit, delete users with expiry dates
+- **Build EXE**: Generate client EXE for each user
+- **Live Monitor**: Real-time client status from Railway
+- **Remote View**: Live screenshots + mouse/keyboard control
+- **Client Heartbeat**: Auto-register + keep-alive system
+- **Railway Deployment**: Auto-deploy from GitHub
+
+## Quick Start
+
 ```bash
+# Install requirements
 pip install -r requirements.txt
-```
 
-2. Run server (on Windows or Linux):
-```bash
+# Run server (local)
 python server.py
-```
 
-3. Run admin panel (on Windows):
-```bash
+# Run admin panel (local)
 python panel.py
+
+# Or use batch files (Windows)
+run_server.bat
+run_panel.bat
 ```
 
-4. Build client EXE (on Windows):
-```bash
-build_client.bat
-```
+## Deployment
 
-5. Run client EXE (as Administrator):
-```bash
-dist\client_receiver.exe
-```
+Push to GitHub → Railway auto-deploys from main branch.
 
-## Testing
+### Environment Variables (Railway Settings)
+- ADMIN_API_KEY=skpro_admin_xK9mP3qR7vN2bL8wY5jH4dF6gT1cZeR
+- USER_API_KEY=skpro_user_aB7cD2eF5gH8iJ3kL6mN9oP4qR1sT5uV
+- PORT=8080
 
-1. Start server
-2. Start admin panel
-3. Start client EXE
-4. Monitor Live → Remote View
-5. Control: ON
-6. Click Test Click button
-7. Check logs for:
-   - [ADMIN] mouse_click sent
-   - [SERVER] CONTROL RECEIVED
-   - [CLIENT] CONTROL RECEIVED
-   - [CLIENT] CONTROL EXECUTED
+## Repository
+https://github.com/supomail01-png/sender
 
+## Version
+SK PRO 4.2 - Clean Rebuild
