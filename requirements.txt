@@ -4,4 +4,3 @@ requests
 pyautogui
 pyperclip
 Pillow
-pywin32
