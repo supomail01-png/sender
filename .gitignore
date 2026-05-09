@@ -20,3 +20,4 @@ sent_total.json
 failed_emails.txt
 *_OLD.py
 *_BACKUP.py
+launcher_*.py
