@@ -154,17 +154,25 @@ async def test_user_connection(auth=Header(None, alias="x-api-key")):
 @app.post("/api/user/heartbeat")
 async def user_heartbeat(req: HeartbeatRequest, auth=Header(None, alias="x-api-key")):
     """Client sends heartbeat to stay online"""
+    print(f"[HEARTBEAT] Received from: {req.username} at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(req.timestamp))}")
+    
     if auth != USER_API_KEY:
+        print(f"[HEARTBEAT] ❌ AUTH FAILED for {req.username}")
         raise HTTPException(status_code=401, detail="Invalid API key")
     
-    with get_db() as conn:
-        conn.execute("""
-            INSERT OR REPLACE INTO users (username, api_key, last_seen, status, is_online)
-            VALUES (?, ?, ?, ?, ?)
-        """, (req.username, USER_API_KEY, req.timestamp, "online", True))
-        conn.commit()
-    
-    return {"ok": True, "status": "heartbeat_received"}
+    try:
+        with get_db() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO users (username, api_key, last_seen, status, is_online)
+                VALUES (?, ?, ?, ?, ?)
+            """, (req.username, USER_API_KEY, req.timestamp, "online", True))
+            conn.commit()
+        
+        print(f"[HEARTBEAT] ✅ REGISTERED {req.username} as ONLINE")
+        return {"ok": True, "status": "heartbeat_received"}
+    except Exception as e:
+        print(f"[HEARTBEAT] ❌ ERROR registering {req.username}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/user/screenshot")
 async def user_upload_screenshot(req: ScreenshotRequest, auth=Header(None, alias="x-api-key")):
@@ -236,12 +244,17 @@ async def test_admin_connection(auth=Header(None, alias="x-api-key")):
 @app.get("/api/admin/users")
 async def get_all_users(auth=Header(None, alias="x-api-key")):
     """Admin gets all connected users"""
+    print(f"[ADMIN_USERS] Request received from admin")
+    
     if auth != ADMIN_API_KEY:
+        print(f"[ADMIN_USERS] ❌ AUTH FAILED")
         raise HTTPException(status_code=401, detail="Invalid API key")
     
     with get_db() as conn:
         # Mark offline if heartbeat timeout
         timeout_threshold = time.time() - HEARTBEAT_TIMEOUT
+        print(f"[ADMIN_USERS] Checking timeouts (threshold: {HEARTBEAT_TIMEOUT}s ago)")
+        
         conn.execute("""
             UPDATE users SET is_online = 0, status = 'offline'
             WHERE last_seen < ? AND is_online = 1
@@ -263,6 +276,10 @@ async def get_all_users(auth=Header(None, alias="x-api-key")):
             "online": bool(row[3]),
             "session_duration": time.time() - row[2] if row[2] else 0
         })
+    
+    print(f"[ADMIN_USERS] ✅ Returning {len(users)} users")
+    for u in users:
+        print(f"  - {u['username']}: {'🟢 ONLINE' if u['online'] else '🔴 OFFLINE'}")
     
     return {"ok": True, "users": users}
 
