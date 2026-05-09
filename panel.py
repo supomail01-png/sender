@@ -10987,24 +10987,16 @@ class MonitorLiveTab(tk.Frame):
         def task():
             try:
                 import requests
-                resp = requests.get(f"{self.api_url}/admin/users", headers={"x-api-key": self.api_key}, timeout=5)
+                resp = requests.get(f"{self.api_url}/api/admin/users", headers={"x-api-key": self.api_key}, timeout=5)
                 if resp.status_code == 200:
                     data = resp.json().get("users", [])
                     self.after(0, lambda: self._update_tree(data, "API"))
                 else:
-                    self._use_demo_data()
-            except:
-                self._use_demo_data()
+                    self.status_lbl.config(text=f"● Error: {resp.status_code}", fg=C["red"])
+            except Exception as e:
+                self.status_lbl.config(text=f"● Connection Error", fg=C["red"])
         threading.Thread(target=task, daemon=True).start()
 
-    def _use_demo_data(self):
-        import random
-        now = time.strftime("%H:%M:%S")
-        demo = [
-            {"user": "admin", "status": "Online", "page": "📡 Live Monitor", "activity": "Monitoring", "last_seen": now},
-            {"user": "user1", "status": "Online", "page": random.choice(["✉ Sender", "⚙️ Settings"]), "activity": "Active", "last_seen": now}
-        ]
-        self.after(0, lambda: self._update_tree(demo, "Demo"))
 
     def _update_tree(self, data, source=""):
         try:
@@ -11371,32 +11363,15 @@ class RemoteControlWindow(tk.Toplevel):
         threading.Thread(target=task, daemon=True).start()
     
     def _start_watching(self):
-        """Start watching"""
+        """Start watching/streaming screenshots"""
         self._watching = True
         self._streaming = True
         self.btn_watch.config(state="disabled")
         self.btn_stop.config(state="normal")
-        self.status_lbl.config(text="● Connecting...", fg=C["yellow"])
+        self.status_lbl.config(text="● Watching (Fetching...)", fg=C["green"])
         
-        def task():
-            try:
-                import requests
-                headers = {"x-api-key": self.api_key}
-                resp = requests.post(
-                    f"{self.api_url}/admin/screen/start/{self.username}",
-                    headers=headers,
-                    timeout=5
-                )
-                if resp.status_code == 200:
-                    self.after(0, lambda: self.status_lbl.config(text="● Watching", fg=C["green"]))
-                    self._fetch_screenshots()
-                else:
-                    self.after(0, lambda: self._stop_watching())
-            except:
-                self.after(0, lambda: self._stop_watching())
-        
-        import threading
-        threading.Thread(target=task, daemon=True).start()
+        # Start screenshot fetch loop immediately
+        self._fetch_screenshots()
     
     def _stop_watching(self):
         """Stop watching"""
@@ -11407,7 +11382,7 @@ class RemoteControlWindow(tk.Toplevel):
         self.status_lbl.config(text="Stopped", fg=C["yellow"])
     
     def _fetch_screenshots(self):
-        """Fetch screenshots"""
+        """Fetch and display screenshots continuously"""
         if not self._watching or not self._running or not self._streaming:
             return
         
@@ -11428,37 +11403,43 @@ class RemoteControlWindow(tk.Toplevel):
                 from io import BytesIO
                 
                 headers = {"x-api-key": self.api_key}
+                # Use correct endpoint: /api/admin/screenshot/{username}
                 resp = requests.get(
-                    f"{self.api_url}/admin/screen/{self.username}",
+                    f"{self.api_url}/api/admin/screenshot/{self.username}",
                     headers=headers,
                     timeout=5
                 )
                 
                 if resp.status_code == 200:
                     data = resp.json()
-                    if data.get("image"):
-                        img_data = base64.b64decode(data["image"])
-                        img = Image.open(BytesIO(img_data))
-                        
-                        # Store remote dimensions
-                        self.remote_width = img.width
-                        self.remote_height = img.height
-                        
-                        # Resize to fit canvas
-                        canvas_width = self.canvas.winfo_width()
-                        canvas_height = self.canvas.winfo_height()
-                        if canvas_width > 100 and canvas_height > 100:
-                            img.thumbnail((canvas_width - 20, canvas_height - 20), Image.Resampling.LANCZOS)
-                        
-                        # Calculate scaling
-                        self.scale_x = self.remote_width / img.width if img.width > 0 else 1.0
-                        self.scale_y = self.remote_height / img.height if img.height > 0 else 1.0
-                        
-                        from PIL import ImageTk
-                        self.photo = ImageTk.PhotoImage(img)
-                        self.after(0, lambda: self._display_image(self.photo, img.width, img.height))
-            except:
-                pass
+                    if data.get("image_base64"):
+                        try:
+                            img_data = base64.b64decode(data["image_base64"])
+                            img = Image.open(BytesIO(img_data))
+                            
+                            # Store remote dimensions
+                            self.remote_width = img.width
+                            self.remote_height = img.height
+                            
+                            # Resize to fit canvas
+                            canvas_width = self.canvas.winfo_width()
+                            canvas_height = self.canvas.winfo_height()
+                            if canvas_width > 100 and canvas_height > 100:
+                                img.thumbnail((canvas_width - 20, canvas_height - 20), Image.Resampling.LANCZOS)
+                            
+                            # Calculate scaling
+                            self.scale_x = self.remote_width / img.width if img.width > 0 else 1.0
+                            self.scale_y = self.remote_height / img.height if img.height > 0 else 1.0
+                            
+                            from PIL import ImageTk
+                            self.photo = ImageTk.PhotoImage(img)
+                            self.after(0, lambda: self._display_image(self.photo, img.width, img.height))
+                        except Exception as e:
+                            self.after(0, lambda: self.status_lbl.config(text=f"● Error: {str(e)[:30]}", fg=C["red"]))
+                else:
+                    self.after(0, lambda: self.status_lbl.config(text=f"● Error: No screenshot", fg=C["red"]))
+            except Exception as e:
+                self.after(0, lambda: self.status_lbl.config(text=f"● Connection Error", fg=C["red"]))
         
         import threading
         threading.Thread(target=task, daemon=True).start()
