@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-requests
-pyautogui
-pyperclip
-Pillow
-pywin32
