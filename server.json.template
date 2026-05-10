@@ -1,0 +1,6 @@
+{
+  "admin_key": "your_secret_admin_key_here_change_this",
+  "database_url": "sqlite:///./data.db",
+  "max_users": 100,
+  "enable_ssl": false
+}
