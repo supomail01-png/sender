@@ -1,6 +1,0 @@
-{
-  "admin_key": "admin_key_change_this_in_production",
-  "database_url": "memory",
-  "max_users": 100,
-  "enable_ssl": false
-}
