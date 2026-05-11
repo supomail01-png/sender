@@ -434,14 +434,11 @@ def build_exe(exe_id, pages, output_file):
             env = os.environ.copy()
             env['PYTHONIOENCODING'] = 'utf-8'
             
-            # ✅ استخدام PIPE بدلاً من capture_output
+            # ✅ استخدام DEVNULL بدلاً من PIPE للتجنب مشاكل الترميز
             kwargs = {
                 "cwd": temp_dir,
-                "stdout": subprocess.PIPE,
-                "stderr": subprocess.PIPE,
-                "text": True,
-                "encoding": 'utf-8',
-                "errors": 'replace',
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
                 "env": env
             }
             
@@ -452,11 +449,7 @@ def build_exe(exe_id, pages, output_file):
             result = subprocess.run(cmd, **kwargs)
             
             if result.returncode != 0:
-                error_msg = result.stderr if result.stderr else "Unknown error"
-                # طباعة stdout للتعرف على المشكلة
-                if result.stdout:
-                    print(f"Output: {result.stdout}")
-                print(f"❌ Error: {error_msg}")
+                print(f"❌ Build failed with return code: {result.returncode}")
                 return False
             
             # نسخ EXE إلى المكان المطلوب

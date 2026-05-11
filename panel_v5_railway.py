@@ -758,11 +758,8 @@ Last Seen: {client_info.get('last_seen', 'N/A')}
                 env['PYTHONIOENCODING'] = 'utf-8'
                 
                 kwargs = {
-                    "stdout": subprocess.PIPE,
-                    "stderr": subprocess.PIPE,
-                    "text": True,
-                    "encoding": 'utf-8',
-                    "errors": 'replace',
+                    "stdout": subprocess.DEVNULL,
+                    "stderr": subprocess.DEVNULL,
                     "timeout": 300,
                     "env": env
                 }
@@ -777,7 +774,7 @@ Last Seen: {client_info.get('last_seen', 'N/A')}
                 )
                 
                 if result.returncode != 0:
-                    messagebox.showerror("Build Error", f"Build failed:\n{result.stderr}")
+                    messagebox.showerror("Build Error", f"Build failed with return code: {result.returncode}")
                     return
                 
                 # النجاح
