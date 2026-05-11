@@ -13,6 +13,14 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+import io
+
+# ✅ إصلاح مشكلة ترميز الأحرف على Windows
+if sys.platform == 'win32':
+    # تعيين ترميز UTF-8 للـ stdout و stderr
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 def create_client_script(exe_id, pages, output_dir):
     """إنشاء script العميل المخصص"""
@@ -40,6 +48,14 @@ import time
 import uuid
 import base64
 from pathlib import Path
+import io
+import sys
+
+# ✅ إصلاح مشكلة ترميز الأحرف على Windows
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 # ==================== التكوين ====================
 
@@ -74,7 +90,7 @@ class Config:
                 "user_key": Config.USER_API_KEY,
                 "client_id": Config.CLIENT_ID,
                 "exe_id": Config.EXE_ID
-            }}, f, indent=2)
+            }}, f, indent=2, ensure_ascii=False)
 
 # ==================== الواجهة الرسومية ====================
 
@@ -373,7 +389,7 @@ if __name__ == "__main__":
     root.mainloop()
 '''
     
-    # حفظ الـ script
+    # حفظ الـ script مع ترميز UTF-8
     client_file = os.path.join(output_dir, "client.py")
     with open(client_file, "w", encoding="utf-8") as f:
         f.write(client_code)
@@ -413,7 +429,19 @@ def build_exe(exe_id, pages, output_file):
             ]
             
             print(f"🔨 Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, cwd=temp_dir, capture_output=True, text=True)
+            
+            # ✅ تعيين ترميز UTF-8 للـ subprocess
+            env = os.environ.copy()
+            env['PYTHONIOENCODING'] = 'utf-8'
+            
+            result = subprocess.run(
+                cmd,
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                env=env
+            )
             
             if result.returncode != 0:
                 print(f"❌ Error: {result.stderr}")
