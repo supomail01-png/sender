@@ -19,8 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY main_backend_v3.py .
 
-# Expose port (Railway will override this)
-EXPOSE 8000
+# Expose port
+EXPOSE 8080
 
 # Run the application
-CMD ["sh", "-c", "uvicorn main_backend_v3:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn main_backend_v3:app --host 0.0.0.0 --port ${PORT:-8080}"]
