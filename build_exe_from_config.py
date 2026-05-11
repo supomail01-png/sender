@@ -434,17 +434,25 @@ def build_exe(exe_id, pages, output_file):
             env = os.environ.copy()
             env['PYTHONIOENCODING'] = 'utf-8'
             
-            result = subprocess.run(
-                cmd,
-                cwd=temp_dir,
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                env=env
-            )
+            # ✅ إضافة creationflags لـ Windows
+            kwargs = {
+                "cwd": temp_dir,
+                "capture_output": True,
+                "text": True,
+                "encoding": 'utf-8',
+                "errors": 'replace',
+                "env": env
+            }
+            
+            if sys.platform == 'win32':
+                import subprocess as sp
+                kwargs['creationflags'] = sp.CREATE_NO_WINDOW
+            
+            result = subprocess.run(cmd, **kwargs)
             
             if result.returncode != 0:
-                print(f"❌ Error: {result.stderr}")
+                error_msg = result.stderr if result.stderr else "Unknown error"
+                print(f"❌ Error: {error_msg}")
                 return False
             
             # نسخ EXE إلى المكان المطلوب
