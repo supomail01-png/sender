@@ -753,11 +753,27 @@ Last Seen: {client_info.get('last_seen', 'N/A')}
                     return
                 
                 # تشغيل البناء
+                # ✅ إصلاح مشكلة الترميز على Windows
+                env = os.environ.copy()
+                env['PYTHONIOENCODING'] = 'utf-8'
+                
+                kwargs = {
+                    "stdout": subprocess.PIPE,
+                    "stderr": subprocess.PIPE,
+                    "text": True,
+                    "encoding": 'utf-8',
+                    "errors": 'replace',
+                    "timeout": 300,
+                    "env": env
+                }
+                
+                if sys.platform == 'win32':
+                    import subprocess as sp
+                    kwargs['creationflags'] = sp.CREATE_NO_WINDOW
+                
                 result = subprocess.run(
                     [sys.executable, str(script_path), exe_id, file_path],
-                    capture_output=True,
-                    text=True,
-                    timeout=300
+                    **kwargs
                 )
                 
                 if result.returncode != 0:
