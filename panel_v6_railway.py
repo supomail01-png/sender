@@ -433,24 +433,40 @@ class AdminPanel:
             )
             
             if response.status_code == 200:
-                self.clients = response.json()
+                data = response.json()
+                self.clients = data.get('clients', {})
                 
                 # تحديث Treeview
                 for item in self.tree.get_children():
                     self.tree.delete(item)
                 
                 for client_id, client_info in self.clients.items():
+                    # Ensure all required fields exist
+                    ip_address = client_info.get('ip_address', 'N/A')
+                    tag = client_info.get('tag', 'Client')
+                    user_pc = client_info.get('user_pc', 'N/A')
+                    version = client_info.get('version', '1.0.0')
+                    status = client_info.get('status', 'offline')
+                    user_status = client_info.get('user_status', 'Active')
+                    country = client_info.get('country', 'N/A')
+                    operating_system = client_info.get('operating_system', 'Windows')
+                    account_type = client_info.get('account_type', 'User')
+                    note = client_info.get('note', '')
+                    
+                    # Display status correctly
+                    display_status = "Online" if status == 'online' else "Offline"
+                    
                     values = (
-                        client_info.get('ip_address', 'N/A'),
-                        client_info.get('tag', 'N/A'),
-                        client_info.get('user_pc', 'N/A'),
-                        client_info.get('version', '1.0.0'),
-                        "Connected" if client_info.get('status') == 'online' else "Offline",
-                        client_info.get('user_status', 'Active'),
-                        client_info.get('country', 'N/A'),
-                        client_info.get('operating_system', 'N/A'),
-                        client_info.get('account_type', 'User'),
-                        client_info.get('note', '')
+                        ip_address,
+                        tag,
+                        user_pc,
+                        version,
+                        display_status,
+                        user_status,
+                        country,
+                        operating_system,
+                        account_type,
+                        note
                     )
                     
                     self.tree.insert("", "end", iid=client_id, values=values)
