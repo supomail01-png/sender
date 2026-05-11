@@ -743,13 +743,19 @@ Last Seen: {client_info.get('last_seen', 'N/A')}
             
             # استدعاء build_exe_from_config.py
             try:
-                # البحث عن build_exe_from_config.py
-                script_path = Path(__file__).parent / "build_exe_from_config.py"
+                # البحث عن build_exe_from_config_v2.py
+                script_path = Path(__file__).parent / "build_exe_from_config_v2.py"
+                if not script_path.exists():
+                    script_path = Path("build_exe_from_config_v2.py")
+                
+                # fallback إلى v1 إذا لم توجد v2
+                if not script_path.exists():
+                    script_path = Path(__file__).parent / "build_exe_from_config.py"
                 if not script_path.exists():
                     script_path = Path("build_exe_from_config.py")
                 
                 if not script_path.exists():
-                    messagebox.showerror("Error", "build_exe_from_config.py not found!")
+                    messagebox.showerror("Error", "build_exe_from_config_v2.py not found!")
                     return
                 
                 # تشغيل البناء
