@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Build EXE from Config
-أداة لبناء EXE مخصص من إعدادات الخادم
+Build EXE from Config - Auto Mode
+أداة لبناء EXE مخصص يبدأ التقاط الصور تلقائياً
 """
 
 import os
