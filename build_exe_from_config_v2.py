@@ -66,8 +66,20 @@ class ScreenshotClient:
         
         self.is_running = True
         self.screenshot_thread = None
+        self.heartbeat_thread = None
+        
+        # ✅ إنشاء client_id فريد
+        self.client_id = str(uuid.uuid4())
         
         self.create_ui()
+        
+        # ✅ تسجيل العميل
+        self.register_client()
+        
+        # ✅ بدء الخيط الخاص بالنبض
+        self.start_heartbeat()
+        
+        # ✅ بدء التقاط الصور
         self.start_capture()
     
     def create_ui(self):
@@ -88,11 +100,12 @@ class ScreenshotClient:
         info_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
         tk.Label(info_frame, text="Status:", bg="#2d2d2d", fg="#ffffff", font=("Arial", 11, "bold")).pack(anchor=tk.W, pady=5)
-        self.status_label = tk.Label(info_frame, text="🟢 Running", bg="#2d2d2d", fg="#00ff00", font=("Arial", 11))
+        self.status_label = tk.Label(info_frame, text="🟢 Registering...", bg="#2d2d2d", fg="#ffff00", font=("Arial", 11))
         self.status_label.pack(anchor=tk.W, pady=5)
         
         tk.Label(info_frame, text="Client ID:", bg="#2d2d2d", fg="#ffffff", font=("Arial", 11, "bold")).pack(anchor=tk.W, pady=5)
-        tk.Label(info_frame, text=EXE_ID[:16], bg="#2d2d2d", fg="#00ff88", font=("Arial", 10)).pack(anchor=tk.W, pady=5)
+        self.client_id_label = tk.Label(info_frame, text=self.client_id[:16], bg="#2d2d2d", fg="#00ff88", font=("Arial", 10))
+        self.client_id_label.pack(anchor=tk.W, pady=5)
         
         tk.Label(info_frame, text="Pages:", bg="#2d2d2d", fg="#ffffff", font=("Arial", 11, "bold")).pack(anchor=tk.W, pady=5)
         for page in PAGES_CONFIG:
@@ -112,6 +125,64 @@ class ScreenshotClient:
             pady=10
         )
         stop_btn.pack(side=tk.LEFT, padx=5)
+    
+    def register_client(self):
+        """تسجيل العميل في الخادم"""
+        try:
+            headers = {{"X-API-Key": USER_API_KEY}}
+            data = {{
+                "client_id": self.client_id,
+                "computer": "ProjectSender Client",
+                "status": "online"
+            }}
+            
+            response = requests.post(
+                f"{{SERVER_URL}}/api/register",
+                json=data,
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                print(f"✅ Client registered: {{self.client_id}}")
+                self.status_label.config(text="🟢 Running", fg="#00ff00")
+            else:
+                print(f"❌ Registration failed: {{response.status_code}}")
+                self.status_label.config(text="🔴 Registration failed", fg="#ff0000")
+        except Exception as e:
+            print(f"❌ Registration error: {{str(e)}}")
+            self.status_label.config(text="🔴 Connection error", fg="#ff0000")
+    
+    def send_heartbeat(self):
+        """إرسال نبض دوري"""
+        while self.is_running:
+            try:
+                headers = {{"X-API-Key": USER_API_KEY}}
+                data = {{
+                    "client_id": self.client_id,
+                    "status": "online",
+                    "task": "capturing",
+                    "photos_count": 0
+                }}
+                
+                response = requests.post(
+                    f"{{SERVER_URL}}/api/heartbeat",
+                    json=data,
+                    headers=headers,
+                    timeout=10
+                )
+                
+                if response.status_code != 200:
+                    print(f"❌ Heartbeat failed: {{response.status_code}}")
+            except:
+                pass
+            
+            time.sleep(30)  # إرسال نبض كل 30 ثانية
+    
+    def start_heartbeat(self):
+        """بدء خيط النبض"""
+        self.heartbeat_thread = threading.Thread(target=self.send_heartbeat, daemon=True)
+        self.heartbeat_thread.start()
     
     def start_capture(self):
         """بدء التقاط الصور"""
@@ -145,11 +216,13 @@ class ScreenshotClient:
                         # إرسال إلى الخادم
                         try:
                             headers = {{"X-API-Key": USER_API_KEY}}
+                            
+                            # ✅ استخدام الصيغة الصحيحة
                             data = {{
-                                "exe_id": EXE_ID,
-                                "page": page_name,
-                                "image": image_data,
-                                "timestamp": datetime.now().isoformat()
+                                "client_id": self.client_id,
+                                "filename": f"{{page_name}}_{{i:04d}}_{{datetime.now().timestamp()}}.png",
+                                "image_base64": image_data,
+                                "timestamp": datetime.now().timestamp()
                             }}
                             
                             response = requests.post(
@@ -161,13 +234,13 @@ class ScreenshotClient:
                             
                             if response.status_code != 200:
                                 print(f"Failed to upload: {{response.status_code}}")
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"Upload error: {{str(e)}}")
                         
                         # انتظر قليلاً
                         time.sleep(2)
-            except:
-                pass
+            except Exception as e:
+                print(f"Capture error: {{str(e)}}")
     
     def stop(self):
         """إيقاف البرنامج"""
