@@ -334,7 +334,7 @@ async def get_screenshots(client_id: str, key: str = Depends(verify_admin_key)):
                 image_data = base64.b64encode(f.read()).decode()
             screenshots.append({
                 "filename": filename,
-                "image": image_data
+                "image_base64": image_data
             })
         
         return {"screenshots": screenshots}
