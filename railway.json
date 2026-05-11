@@ -1,17 +1,15 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "builder": "dockerfile"
+    "builder": "dockerfile",
+    "dockerfile": "Dockerfile"
   },
   "deploy": {
     "numReplicas": 1,
-    "startCommand": "python main_backend_v3.py",
+    "startCommand": "uvicorn main_backend_v3:app --host 0.0.0.0 --port 8000",
     "restartPolicyMaxRetries": 10,
-    "restartPolicyWindowMs": 60000
-  },
-  "plugins": [
-    {
-      "source": "https://github.com/railwayapp/nixpacks"
-    }
-  ]
+    "restartPolicyWindowMs": 60000,
+    "healthcheckPath": "/health",
+    "healthcheckInterval": 30
+  }
 }
