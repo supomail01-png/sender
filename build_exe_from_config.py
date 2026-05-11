@@ -459,17 +459,15 @@ def build_exe(exe_id, pages, output_file):
                 cwd=temp_dir,
                 capture_output=True,
                 text=True,
-                encoding='utf-8',
-                errors='replace',
                 env=env
             )
             
             if result.returncode != 0:
                 print(f"❌ Build failed with return code: {result.returncode}")
                 if result.stderr:
-                    print(f"Error output: {result.stderr[:500]}")
+                    print(f"\n📄 Error output:\n{result.stderr}")
                 if result.stdout:
-                    print(f"Build output: {result.stdout[:500]}")
+                    print(f"\n📄 Build output:\n{result.stdout}")
                 return False
             
             # نسخ EXE إلى المكان المطلوب
