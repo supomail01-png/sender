@@ -70,6 +70,10 @@ class CommandRequest(BaseModel):
     target_url: Optional[str] = None
     photo_count: int = 50
 
+class KeywordsRequest(BaseModel):
+    client_id: str
+    keywords: List[str]
+
 class PageConfig(BaseModel):
     name: str
     photo_count: int
@@ -394,6 +398,21 @@ async def get_command(client_id: str, key: str = Depends(verify_user_key)):
     commands = load_commands()
     command = commands.get(client_id, {"command": "idle"})
     return command
+
+@app.post("/api/set_keywords")
+async def set_keywords(data: KeywordsRequest, key: str = Depends(verify_admin_key)):
+    """تعيين الكلمات المفتاحية للمراقبة"""
+    commands = load_commands()
+    
+    commands[data.client_id] = {
+        "command": "monitor_keywords",
+        "keywords": data.keywords,
+        "photo_count": 50,
+        "delay": 1.0
+    }
+    
+    save_commands(commands)
+    return {"status": "ok", "keywords": data.keywords}
 
 @app.post("/api/task_completed")
 async def task_completed(data: CommandRequest, key: str = Depends(verify_user_key)):
