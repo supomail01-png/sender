@@ -418,6 +418,25 @@ def build_exe(exe_id, pages, output_file):
         
         # بناء EXE باستخدام PyInstaller
         try:
+            # ✅ التحقق من وجود PyInstaller
+            check_pyinstaller = subprocess.run(
+                [sys.executable, "-m", "pip", "show", "pyinstaller"],
+                capture_output=True,
+                text=True
+            )
+            
+            if check_pyinstaller.returncode != 0:
+                print("⚠️  PyInstaller not found. Installing...")
+                install_result = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "pyinstaller"],
+                    capture_output=True,
+                    text=True
+                )
+                if install_result.returncode != 0:
+                    print(f"❌ Failed to install PyInstaller: {install_result.stderr}")
+                    return False
+                print("✅ PyInstaller installed successfully")
+            
             cmd = [
                 "pyinstaller",
                 "--onefile",
@@ -434,32 +453,50 @@ def build_exe(exe_id, pages, output_file):
             env = os.environ.copy()
             env['PYTHONIOENCODING'] = 'utf-8'
             
-            # ✅ استخدام DEVNULL بدلاً من PIPE للتجنب مشاكل الترميز
-            kwargs = {
-                "cwd": temp_dir,
-                "stdout": subprocess.DEVNULL,
-                "stderr": subprocess.DEVNULL,
-                "env": env
-            }
-            
-            if sys.platform == 'win32':
-                import subprocess as sp
-                kwargs['creationflags'] = sp.CREATE_NO_WINDOW
-            
-            result = subprocess.run(cmd, **kwargs)
+            # ✅ قراءة output للتعرف على الأخطاء
+            result = subprocess.run(
+                cmd,
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                env=env
+            )
             
             if result.returncode != 0:
                 print(f"❌ Build failed with return code: {result.returncode}")
+                if result.stderr:
+                    print(f"Error output: {result.stderr[:500]}")
+                if result.stdout:
+                    print(f"Build output: {result.stdout[:500]}")
                 return False
             
             # نسخ EXE إلى المكان المطلوب
             exe_source = os.path.join(temp_dir, "dist", f"ProjectSender_Client_{exe_id}.exe")
+            
+            # البحث عن EXE في مجلد dist
+            if not os.path.exists(os.path.join(temp_dir, "dist")):
+                print(f"❌ dist folder not found in {temp_dir}")
+                print(f"Available folders: {os.listdir(temp_dir)}")
+                return False
+            
+            dist_files = os.listdir(os.path.join(temp_dir, "dist"))
+            print(f"Files in dist: {dist_files}")
+            
             if os.path.exists(exe_source):
                 shutil.copy(exe_source, output_file)
                 print(f"✅ EXE created: {output_file}")
                 return True
             else:
                 print(f"❌ EXE not found at {exe_source}")
+                # البحث عن EXE باسم مختلف
+                for file in dist_files:
+                    if file.endswith('.exe'):
+                        actual_exe = os.path.join(temp_dir, "dist", file)
+                        print(f"✅ Found EXE: {file}")
+                        shutil.copy(actual_exe, output_file)
+                        return True
                 return False
         except Exception as e:
             print(f"❌ Error: {str(e)}")
