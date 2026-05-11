@@ -434,10 +434,11 @@ def build_exe(exe_id, pages, output_file):
             env = os.environ.copy()
             env['PYTHONIOENCODING'] = 'utf-8'
             
-            # ✅ إضافة creationflags لـ Windows
+            # ✅ استخدام PIPE بدلاً من capture_output
             kwargs = {
                 "cwd": temp_dir,
-                "capture_output": True,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
                 "text": True,
                 "encoding": 'utf-8',
                 "errors": 'replace',
@@ -452,6 +453,9 @@ def build_exe(exe_id, pages, output_file):
             
             if result.returncode != 0:
                 error_msg = result.stderr if result.stderr else "Unknown error"
+                # طباعة stdout للتعرف على المشكلة
+                if result.stdout:
+                    print(f"Output: {result.stdout}")
                 print(f"❌ Error: {error_msg}")
                 return False
             
