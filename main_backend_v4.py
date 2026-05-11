@@ -198,7 +198,17 @@ async def register_client(data: ClientRegister, key: str = Depends(verify_user_k
         "delay": 1.0,
         "screenshots_count": 0,
         "last_seen": datetime.now().isoformat(),
-        "registered_at": datetime.now().isoformat()
+        "registered_at": datetime.now().isoformat(),
+        # Panel required fields
+        "ip_address": "N/A",
+        "tag": "Client",
+        "user_pc": "N/A",
+        "version": "1.0.0",
+        "user_status": "Active",
+        "country": "N/A",
+        "operating_system": "Windows",
+        "account_type": "User",
+        "note": ""
     }
     
     save_clients(clients)
@@ -220,13 +230,39 @@ async def heartbeat(data: ClientHeartbeat, key: str = Depends(verify_user_key)):
             "photo_count": 0,
             "delay": 1.0,
             "screenshots_count": 0,
-            "last_seen": datetime.now().isoformat()
+            "last_seen": datetime.now().isoformat(),
+            # Panel required fields
+            "ip_address": "N/A",
+            "tag": "Client",
+            "user_pc": "N/A",
+            "version": "1.0.0",
+            "user_status": "Active",
+            "country": "N/A",
+            "operating_system": "Windows",
+            "account_type": "User",
+            "note": ""
         }
     
     clients[data.client_id]["status"] = data.status
     clients[data.client_id]["task"] = data.task
     clients[data.client_id]["photos_count"] = data.photos_count
     clients[data.client_id]["last_seen"] = datetime.now().isoformat()
+    
+    # Ensure all required fields exist
+    required_fields = {
+        "ip_address": "N/A",
+        "tag": "Client",
+        "user_pc": "N/A",
+        "version": "1.0.0",
+        "user_status": "Active",
+        "country": "N/A",
+        "operating_system": "Windows",
+        "account_type": "User",
+        "note": ""
+    }
+    for field, default_value in required_fields.items():
+        if field not in clients[data.client_id]:
+            clients[data.client_id][field] = default_value
     
     if data.target_url:
         clients[data.client_id]["target_url"] = data.target_url
